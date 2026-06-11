@@ -42,7 +42,7 @@ def main(dump_log: bool) -> None:
     for inv in invoices:
         if inv.invoice_id in quarantined_ids:
             print(f"{inv.invoice_id:8} {'-':5} {'':>4} {'':9} {'QUARANT':8} {'-':9} {'-':6} "
-                  "flagged to human: incomplete invoice")
+                "flagged to human: incomplete invoice")
             continue
 
         decision = strategy.decide(inv)
@@ -60,8 +60,8 @@ def main(dump_log: bool) -> None:
             detail = ",".join(result.codes)
 
         print(f"{inv.invoice_id:8} {str(inv.is_b2b):5} {inv.days_overdue:>4} "
-              f"{inv.status.value:9} {decision.action.value:8} {str(gate_dec):9} "
-              f"{str(sent):6} {detail}")
+            f"{inv.status.value:9} {decision.action.value:8} {str(gate_dec):9} "
+            f"{str(sent):6} {detail}")
 
     print(f"\nAudit-log entries recorded: {len(log.entries)}")
     if dump_log:
