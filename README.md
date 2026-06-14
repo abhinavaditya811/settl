@@ -101,7 +101,7 @@ demo.py              # reproduces the decision-trace table
 | --- | --- |
 | 1. Schema + synthetic dataset | ✅ done |
 | 2. Strategy agent + compliance gate (isolation-tested) | ✅ done |
-| 3. Orchestrator + drafting agent | 🔜 next |
+| 3. Orchestrator (routing spine + unpaid loop) | ✅ done · drafting agent 🔜 next |
 | 4. Execution log via Agent Engine | local stand-in done; Agent Engine 🔜 |
 | 5. Sending — mocked | ✅ mocked |
 | 6. Real adapters (CSV/Stripe) + live email/SMS | ⛔ only once a pilot is signed |
@@ -111,6 +111,27 @@ demo.py              # reproduces the decision-trace table
 ## Session log
 
 Newest first. Each entry: what changed, and where to pick up.
+
+### Session 2 — orchestrator (the spine)
+- Built `src/settl/orchestrator/`: `result.py` (`PipelineResult`/`TerminalState`),
+  `pipeline.py` (the routing spine over injected agents), `loop.py` (unpaid re-queue
+  skeleton), `runtime.py` (NoOp Gemini-Flash triage seam), `__init__.py`.
+- The spine routes every invoice: ingestion → strategy → (CHASE) draft → gate → send.
+  First-contact is held as `AWAITING_APPROVAL` (one-tap), classified off the gate's
+  `FIRST_CONTACT_APPROVAL` — the orchestrator never overrides the gate.
+- Refactored `demo.py` into a **dry run**: decision-trace table + unpaid-loop plan,
+  writing a full JSONL audit log to `runs/`. 25/25 invoices route correctly
+  (10 sent · 4 awaiting approval · 6 escalated · 3 skipped · 1 held · 1 quarantined);
+  85 audit entries. **37 tests pass** (9 new orchestrator tests).
+- Scaffolded the **real email self-test** behind the shared `Sender` seam:
+  `sending/base.py` (`GatedSender` — the "never send on ESCALATE" guarantee lives
+  here once for all senders), `sending/email_sender.py` (`GmailSmtpSender`, all
+  creds from env), and `Orchestrator.approve_and_send` (the one-tap human-approval
+  action — the only path a first-contact message reaches the sender; the dashboard
+  button will call it). `send_live.py` runs one invoice to your own inbox.
+  **45 tests pass** (SMTP mocked — no creds needed to build/test).
+- **Pick up next:** run the live email self-test (set `SETTL_SMTP_*` env vars),
+  then the customer-facing dashboard over the audit log.
 
 ### Session 1 — decision core
 - Built the canonical `Invoice` schema (with computed `days_overdue`), validate/quarantine,
