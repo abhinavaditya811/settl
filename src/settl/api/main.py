@@ -1,0 +1,163 @@
+"""FastAPI engine API — the HTTP face of the Settl engine for the dashboard.
+
+Thin and stateless-looking on the surface: every route projects the in-process
+``BoardState`` into the JSON contract in ``schemas.py``. No business logic lives
+here — the orchestrator, gate, and sender remain the authorities. Routes:
+
+    GET  /health                    liveness + whether live email is armed
+    GET  /invoices                  the board (summary counts + cards)
+    GET  /metrics                   money aggregates + aging (overview cockpit)
+    GET  /activity                  recent execution-log feed across all invoices
+    GET  /invoices/{id}             one invoice: card + draft + pipeline steps
+    GET  /invoices/{id}/trace       the audit-log timeline for one invoice
+    POST /invoices/{id}/approve     approve a held draft (optional edited message)
+    POST /refresh                   re-run the board over the dataset
+
+CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from settl.api.schemas import (
+    ActivityEntry,
+    ApproveBody,
+    ApproveResponse,
+    BoardResponse,
+    BoardSummary,
+    InvoiceCard,
+    InvoiceDetail,
+    Metrics,
+    StepView,
+    TraceEntry,
+)
+from settl.api.state import BoardState
+from settl.orchestrator import TerminalState
+from settl.orchestrator.result import PipelineResult
+from settl.schema.invoice import Invoice
+
+_RUNS = Path(__file__).resolve().parents[3] / "runs"
+_RUNS.mkdir(exist_ok=True)
+
+app = FastAPI(title="Settl Engine API", version="0.1.0")
+
+_origins = os.environ.get(
+    "SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _origins if o.strip()],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+state = BoardState(log_path=_RUNS / "dashboard.jsonl")
+
+
+# -- projectors ---------------------------------------------------------------
+
+
+def _card(inv: Invoice, res: PipelineResult) -> InvoiceCard:
+    return InvoiceCard(
+        invoice_id=inv.invoice_id,
+        debtor_name=inv.debtor_name,
+        amount_due=str(inv.amount_due),
+        currency=inv.currency,
+        days_overdue=inv.days_overdue,
+        status=inv.status.value,
+        is_b2b=inv.is_b2b,
+        channel=res.channel,
+        terminal_state=res.terminal_state.value,
+        detail=res.detail,
+        needs_human=res.needs_human,
+        can_approve=res.terminal_state is TerminalState.AWAITING_APPROVAL,
+    )
+
+
+def _detail(inv: Invoice, res: PipelineResult) -> InvoiceDetail:
+    return InvoiceDetail(
+        **_card(inv, res).model_dump(),
+        message=res.message,
+        steps=[StepView(agent=s.agent, decision=s.decision, reasoning=s.reasoning) for s in res.steps],
+    )
+
+
+# -- routes -------------------------------------------------------------------
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok", "live_send": state.live_send_enabled}
+
+
+@app.get("/invoices", response_model=BoardResponse)
+def invoices() -> BoardResponse:
+    cards = [_card(inv, res) for inv, res in state.results()]
+    return BoardResponse(
+        summary=BoardSummary(total=len(cards), counts=state.counts()),
+        invoices=cards,
+    )
+
+
+@app.get("/metrics", response_model=Metrics)
+def metrics() -> Metrics:
+    return Metrics(**state.metrics())
+
+
+@app.get("/activity", response_model=list[ActivityEntry])
+def activity(limit: int = 50) -> list[ActivityEntry]:
+    return [
+        ActivityEntry(
+            timestamp=e.timestamp, invoice_id=e.invoice_id, agent=e.agent,
+            decision=e.decision, reasoning=e.reasoning,
+        )
+        for e in state.activity(limit)
+    ]
+
+
+@app.get("/invoices/{invoice_id}", response_model=InvoiceDetail)
+def invoice(invoice_id: str) -> InvoiceDetail:
+    found = state.get(invoice_id)
+    if not found:
+        raise HTTPException(404, f"unknown invoice {invoice_id}")
+    return _detail(*found)
+
+
+@app.get("/invoices/{invoice_id}/trace", response_model=list[TraceEntry])
+def trace(invoice_id: str) -> list[TraceEntry]:
+    if not state.get(invoice_id):
+        raise HTTPException(404, f"unknown invoice {invoice_id}")
+    return [
+        TraceEntry(
+            timestamp=e.timestamp, agent=e.agent, decision=e.decision,
+            reasoning=e.reasoning, details=e.details,
+        )
+        for e in state.trace(invoice_id)
+    ]
+
+
+@app.post("/invoices/{invoice_id}/approve", response_model=ApproveResponse)
+def approve(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse:
+    if not state.get(invoice_id):
+        raise HTTPException(404, f"unknown invoice {invoice_id}")
+    result = state.approve(invoice_id, body.message if body else None)
+    if result is None:
+        raise HTTPException(409, f"{invoice_id} is not awaiting approval")
+    return ApproveResponse(
+        invoice_id=invoice_id,
+        terminal_state=result.terminal_state.value,
+        detail=result.detail,
+        sent=result.terminal_state is TerminalState.SENT,
+        message=result.message,
+    )
+
+
+@app.post("/refresh", response_model=BoardResponse)
+def refresh() -> BoardResponse:
+    state.refresh()
+    return invoices()

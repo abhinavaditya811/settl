@@ -21,6 +21,7 @@ htmlcov/
 # --- Secrets & credentials (Gemini / GCP keys land here later) ---
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 credentials.json

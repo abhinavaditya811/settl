@@ -1,6 +1,18 @@
-"""Sending — mocked in task 1 (logs 'would send'). Real email/SMS/Stripe land
-only once a pilot is signed (DESIGN §5)."""
+"""Sending — the gate-cleared delivery seam.
 
-from settl.sending.mock_sender import MockSender, SendOutcome
+``MockSender`` (default, offline) logs "would send …"; ``GmailSmtpSender`` is the
+contingent real-email path for a self-test. Both inherit the compliance refusal
+from ``GatedSender`` (DESIGN §5)."""
 
-__all__ = ["MockSender", "SendOutcome"]
+from settl.sending.base import GatedSender, SendOutcome, Sender
+from settl.sending.email_sender import GmailSmtpSender, MissingCredentials
+from settl.sending.mock_sender import MockSender
+
+__all__ = [
+    "GatedSender",
+    "GmailSmtpSender",
+    "MissingCredentials",
+    "MockSender",
+    "SendOutcome",
+    "Sender",
+]
