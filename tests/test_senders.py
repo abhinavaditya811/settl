@@ -59,7 +59,10 @@ def test_gmail_sender_refuses_on_escalate_without_touching_smtp(monkeypatch):
     assert out.sent is False
 
 
-def test_gmail_sender_requires_credentials_on_pass():
+def test_gmail_sender_requires_credentials_on_pass(monkeypatch):
+    # Hermetic: ignore any real .env creds present on the dev machine.
+    monkeypatch.delenv("SETTL_SMTP_USER", raising=False)
+    monkeypatch.delenv("SETTL_SMTP_APP_PASSWORD", raising=False)
     sender = GmailSmtpSender(user=None, app_password=None)
     assert sender.configured is False
     with pytest.raises(MissingCredentials):

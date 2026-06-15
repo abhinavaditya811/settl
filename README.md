@@ -112,6 +112,52 @@ demo.py              # reproduces the decision-trace table
 
 Newest first. Each entry: what changed, and where to pick up.
 
+### Session 5 — dashboard redesign (customer cockpit)
+- Reworked the flat single-page dashboard into a multi-view app for the **paying
+  customer**, minimal/restrained styling: sidebar app shell + four routes.
+- **Overview** — money-first cockpit: KPI cards (outstanding / in-flight / recovered
+  / awaiting you), an aging-by-age chart, an outcome breakdown, and a live "what the
+  agent did" feed off the execution log.
+- **Approvals** — focused inbox; the AI draft is **editable before sending** and the
+  edit is re-run through the compliance gate (`approve_and_send` already re-gates).
+- **Invoices** — searchable/filterable table + the decision-trace drawer.
+- **Activity** — full audit feed, filterable by agent.
+- Engine API gained `GET /metrics`, `GET /activity`, and an optional edited-message
+  body on approve; `ExecutionLog.clear()` keeps the feed from double-counting on
+  re-run. Shared client `BoardContext` drives every view. **56 Python tests pass**,
+  `next build` clean.
+
+### Session 4 — the dashboard (`web/`)
+- Built the customer-facing dashboard: **Next.js 14 (App Router, TS) + styled-components**
+  with a light/dark toggle and an SSR style registry (no FOUC). See `web/README.md`.
+- Three views over the engine: the **invoice board** (summary stat cards + table),
+  the **approval queue** (first-contact drafts with a working **Approve & Send** that
+  calls the engine's `approve_and_send`), and a slide-over **decision trace** drawer
+  (drafted message + per-hop audit timeline).
+- The frontend never hits the engine directly — Next route handlers under `/api/*`
+  proxy server-side to the FastAPI engine (`SETTL_API_BASE_URL`), keeping the URL off
+  the browser. Header badge reflects mock vs. live-email mode.
+- Verified end-to-end: `next build` clean (no TS errors), board/approve/trace all flow
+  Next → FastAPI → engine. **52 Python tests still pass.**
+- **Pick up next:** deploy (frontend → Vercel, engine → Cloud Run); optional polish
+  (auto-refresh, filters); then SMS when ready. Drafting agent (Gemini) is still the
+  open engine workstream (TASKS Week 2).
+
+### Session 3 — real email send + engine API
+- **Real Gmail self-test:** sent a live first-contact draft through the full pipeline
+  to a real inbox (`runs/live_self_test.jsonl`), exercising the one-tap approval. All
+  creds load from a gitignored `.env` (`src/settl/config.py`; template in `.env.example`).
+- **FastAPI engine API** (`src/settl/api/`): `state.py` (`BoardState` runs the
+  orchestrator in-process — board batch is always mock/safe; approvals send real email
+  only when `SETTL_LIVE_SEND=1` + `SETTL_TEST_RECIPIENT`), `schemas.py` (JSON contract),
+  `main.py` (routes: `/health`, `/invoices`, `/invoices/{id}`, `/invoices/{id}/trace`,
+  `/invoices/{id}/approve`, `/refresh`). Optional deps: `pip install -e ".[api]"`.
+  Run: `uvicorn settl.api.main:app --reload --port 8000`.
+- **52 tests pass** (7 new API contract tests via TestClient).
+- **Pick up next:** the `web/` Next.js (TS) + styled-components dashboard — board,
+  approval queue (Approve & Send → `/approve`), and per-invoice decision trace.
+  Frontend → Vercel; this API → Cloud Run.
+
 ### Session 2 — orchestrator (the spine)
 - Built `src/settl/orchestrator/`: `result.py` (`PipelineResult`/`TerminalState`),
   `pipeline.py` (the routing spine over injected agents), `loop.py` (unpaid re-queue

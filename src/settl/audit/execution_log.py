@@ -60,6 +60,11 @@ class ExecutionLog:
     def entries(self) -> list[LogEntry]:
         return list(self._entries)
 
+    def clear(self) -> None:
+        """Drop in-memory entries (the JSONL file, if any, is left intact). Used
+        when a run is re-executed so the live activity feed doesn't double-count."""
+        self._entries.clear()
+
     def for_invoice(self, invoice_id: str) -> list[LogEntry]:
         return [e for e in self._entries if e.invoice_id == invoice_id]
 
