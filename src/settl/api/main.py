@@ -1,8 +1,8 @@
-"""FastAPI engine API — the HTTP face of the Settl engine for the dashboard.
+"""FastAPI engine API - the HTTP face of the Settl engine for the dashboard.
 
 Thin and stateless-looking on the surface: every route projects the in-process
 ``BoardState`` into the JSON contract in ``schemas.py``. No business logic lives
-here — the orchestrator, gate, and sender remain the authorities. Routes:
+here - the orchestrator, gate, and sender remain the authorities. Routes:
 
     GET  /health                    liveness + whether live email is armed
     GET  /invoices                  the board (summary counts + cards)

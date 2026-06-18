@@ -1,4 +1,4 @@
-"""The canonical Invoice schema (CLAUDE.md) — the only shape agents ever read.
+"""The canonical Invoice schema (CLAUDE.md) - the only shape agents ever read.
 
 Every source adapter normalizes its raw blob into this type. Two invariants are
 enforced structurally here:
@@ -8,7 +8,7 @@ enforced structurally here:
     late a payment is cannot mislead the agents.
   * ``status`` is a fixed enum. Adapters map onto it; agents read only the enum.
     (Verifying status against real payment data is the reconcile agent's job,
-    later — this layer just guarantees the shape.)
+    later - this layer just guarantees the shape.)
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ class Invoice(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def days_overdue(self) -> int:
-        """Days past due, recomputed by us — never trusted from source."""
+        """Days past due, recomputed by us - never trusted from source."""
         return (self.as_of_date - self.due_date).days
 
     @property

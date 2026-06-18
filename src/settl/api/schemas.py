@@ -1,4 +1,4 @@
-"""API response models — the JSON contract the dashboard consumes.
+"""API response models - the JSON contract the dashboard consumes.
 
 These are deliberately presentation-shaped (strings, labels, counts) so the
 frontend renders without re-deriving anything. They never expose a raw invoice;

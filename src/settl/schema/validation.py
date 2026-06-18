@@ -2,7 +2,7 @@
 
 After an adapter produces a canonical Invoice, we check completeness. Anything we
 cannot act on safely is *quarantined* and flagged to a human ("couldn't read this
-invoice") — we never guess a missing field. This is a soft gate that returns issues
+invoice") - we never guess a missing field. This is a soft gate that returns issues
 rather than raising, so one bad row never crashes a batch.
 """
 

@@ -85,7 +85,7 @@ export interface Metrics {
   aging: AgingBucket[];
 }
 
-// Display metadata for each terminal state — label + which theme color key to use.
+// Display metadata for each terminal state - label + which theme color key to use.
 export const STATE_META: Record<TerminalState, { label: string; tone: TerminalState }> = {
   sent: { label: "Sent", tone: "sent" },
   awaiting_approval: { label: "Awaiting approval", tone: "awaiting_approval" },

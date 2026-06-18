@@ -1,12 +1,12 @@
-"""The enumerated compliance rules — one function per rule.
+"""The enumerated compliance rules - one function per rule.
 
 These implement the NON-NEGOTIABLE list in CLAUDE.md. Every rule is deterministic
 and returns zero or more ``RuleViolation``s; any violation means the message is
 blocked and escalated to a human. Rules split into:
 
-  * invoice/state rules — evaluated on every invoice, message or not
-  * message-content rules — evaluated only when a drafted message is supplied
-  * the human-in-the-loop rule — first contact to a new debtor needs approval
+  * invoice/state rules - evaluated on every invoice, message or not
+  * message-content rules - evaluated only when a drafted message is supplied
+  * the human-in-the-loop rule - first contact to a new debtor needs approval
 
 Adding a rule = adding a function here and registering it in gate.py. Never inline
 a compliance check anywhere else in the codebase.
@@ -38,7 +38,7 @@ def rule_consumer_debt(invoice: Invoice) -> list[RuleViolation]:
         return [
             RuleViolation(
                 "B2B_ONLY",
-                "Consumer (non-B2B) debt — outside first-party/B2B scope (FDCPA). "
+                "Consumer (non-B2B) debt - outside first-party/B2B scope (FDCPA). "
                 "Escalate; do not send.",
             )
         ]
@@ -50,7 +50,7 @@ def rule_disputed(invoice: Invoice) -> list[RuleViolation]:
         return [
             RuleViolation(
                 "DISPUTED",
-                "Invoice status is disputed — do not auto-respond; route to human.",
+                "Invoice status is disputed - do not auto-respond; route to human.",
             )
         ]
     return []
@@ -70,7 +70,7 @@ def rule_inbound_dispute(invoice: Invoice) -> list[RuleViolation]:
         return [
             RuleViolation(
                 "DISPUTE_RAISED",
-                f"Debtor disputed in a reply ({', '.join(hits)}) — escalate.",
+                f"Debtor disputed in a reply ({', '.join(hits)}) - escalate.",
             )
         ]
     return []
@@ -82,7 +82,7 @@ def rule_payment_plan_request(invoice: Invoice) -> list[RuleViolation]:
         return [
             RuleViolation(
                 "PAYMENT_PLAN_REQUEST",
-                f"Debtor requested a payment plan ({', '.join(hits)}) — escalate; "
+                f"Debtor requested a payment plan ({', '.join(hits)}) - escalate; "
                 "do not auto-negotiate.",
             )
         ]
@@ -99,7 +99,7 @@ def rule_contact_frequency(invoice: Invoice) -> list[RuleViolation]:
             RuleViolation(
                 "FREQUENCY_LIMIT",
                 f"{len(recent)} outbound touches in the last {FREQUENCY_WINDOW_DAYS} "
-                "days — exceeds contact-frequency limit; escalate.",
+                "days - exceeds contact-frequency limit; escalate.",
             )
         ]
     return []
@@ -111,7 +111,7 @@ def rule_first_contact(invoice: Invoice) -> list[RuleViolation]:
         return [
             RuleViolation(
                 "FIRST_CONTACT_APPROVAL",
-                "First contact to a new debtor — requires one-tap human approval "
+                "First contact to a new debtor - requires one-tap human approval "
                 "before sending (pilot mode).",
             )
         ]

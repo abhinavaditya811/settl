@@ -1,4 +1,4 @@
-# DESIGN.md — Settl
+# DESIGN.md - Settl
 
 > The fuller context doc for the project. `CLAUDE.md` holds the lean, durable rules
 > the coding agent enforces every session; this file holds the reasoning, the build
@@ -8,11 +8,11 @@
 
 ## 1. What we're building
 
-**Settl — an autonomous outreach & recovery engine.**
+**Settl - an autonomous outreach & recovery engine.**
 
 An AI agent that gets freelancers and small businesses paid: it decides timing, tone,
 and channel for each overdue invoice, drafts the message in the customer's voice, clears
-a hard compliance gate, sends, and reconciles the outcome — looping until the money lands
+a hard compliance gate, sends, and reconciles the outcome - looping until the money lands
 or a human takes over.
 
 We prove the engine on **collections** (where money moves fastest and the AI's decisions
@@ -35,10 +35,10 @@ Decisions we've already made and shouldn't relitigate without new information:
   so success-fee revenue is bankable in week 1. Grants is slow (months-long, speculative
   cycles), has a weaker "AI executes a decision" story, and we have no warm channel to
   researchers. Grants is **roadmap**, captured in the narrative, not built in the 60 days.
-- **Success-fee pricing.** 5–10% of recovered cash, no monthly to start → frictionless
+- **Success-fee pricing.** 5-10% of recovered cash, no monthly to start → frictionless
   pilot ask ("I only get paid if I recover yours"). Add a monthly base later for MRR.
 - **First-party + B2B only.** Collect *for* the business, in its name, on business-to-business
-  debts. This keeps us out of FDCPA / debt-collector licensing exposure. Never custodial —
+  debts. This keeps us out of FDCPA / debt-collector licensing exposure. Never custodial -
   payment flows through the customer's own processor; we never touch the money.
 - **No paid acquisition reliance.** The submission scrutinizes marketing spend as a viability
   check. Acquisition is via communities (r/freelance, r/smallbusiness), freelancer FB groups,
@@ -105,9 +105,25 @@ human approval; later touches go autonomous once trust is earned. Model = AI doe
 Audit trail (compliance) + sales proof ("recovered $3,200, here's exactly what it did") +
 submission evidence (the agent-execution logs judges explicitly ask for).
 
+### The operator dashboard (engine API + Next.js cockpit)
+
+A thin HTTP layer (`src/settl/api/`, FastAPI) exposes the engine to a Next.js dashboard
+(`web/`): the board of invoices, each invoice's full decision trace, money/aging metrics,
+the activity feed, and the **one-tap approval** for held first-contact drafts. This is where
+the human does the last mile and where the AI's reasoning becomes legible for the demo video.
+
+**Hard contract:** the API only *projects* engine state - it runs the orchestrator and reads
+its results. The orchestrator, compliance gate, and sender remain the sole authorities; no
+business logic, and especially no send/compliance decision, ever lives in a route. Approval
+goes back through `Orchestrator.approve_and_send`, which re-runs the gate.
+
+⚠️ The dashboard currently runs on the **synthetic** dataset. Its money figures are synthetic
+by construction - per CLAUDE.md they are for demo/logic only and must never be presented as
+revenue or customer evidence. Real figures come only from a real customer's real invoices.
+
 ---
 
-## 4. Data layer — normalize at the edge, reason over a canonical form
+## 4. Data layer - normalize at the edge, reason over a canonical form
 
 Agents **never** see a raw invoice. All format variety is absorbed by thin **source adapters**
 that translate into one **canonical Invoice schema**; agents only ever read that.
@@ -124,7 +140,7 @@ Invoice {
   issue_date        // ISO date
   due_date          // ISO date
   days_overdue      // COMPUTED by us, never trusted from source
-  status            // "open" | "paid" | "partial" | "disputed" — verified, not trusted
+  status            // "open" | "paid" | "partial" | "disputed" - verified, not trusted
   debtor_name
   debtor_contact    // email / phone
   is_b2b            // critical for the compliance gate
@@ -141,36 +157,42 @@ Invoice {
 - **Normalize at the edge:** field-map (amount/total/balance_due → `amount_due`), dates → ISO,
   money → number + currency, status → fixed enum.
 - **Recompute derived fields.** Compute `days_overdue` ourselves; verify `status` against payment
-  data — never dun someone who already paid.
+  data - never dun someone who already paid.
 - **Validate + quarantine.** After an adapter runs, validate completeness (due date, positive
   amount, contact method). Failures flag to a human ("couldn't read this invoice"), never guessed.
 
 ### For the 60-day build: ship two adapters
 
-- **CSV adapter** — universal lowest common denominator; any customer can export from any tool,
+- **CSV adapter** - universal lowest common denominator; any customer can export from any tool,
   so no pilot is ever blocked by "we don't support your system."
-- **Stripe adapter** — clean, automatable, what most early freelancer/SMB pilots already use.
+- **Stripe adapter** - clean, automatable, what most early freelancer/SMB pilots already use.
 - PDF + QuickBooks adapters = roadmap.
 
 ---
 
-## 5. Build sequence — decision core first, plumbing last
+## 5. Build sequence - decision core first, plumbing last
 
-Build against a **synthetic dataset** (20–30 fake invoices with edge cases: first-time client
+Build against a **synthetic dataset** (20-30 fake invoices with edge cases: first-time client
 slightly overdue, repeat late-payer, a consumer debt that *should* trip the gate, a disputed
 invoice, one already paid). No real customer needed to build and prove the engine.
 
 1. **Data schema + synthetic dataset.** Foundation + demo material.
-2. **Strategy agent + compliance gate, tested in isolation.** The heart of the product — prove
+2. **Strategy agent + compliance gate, tested in isolation.** The heart of the product - prove
    the judgment and escalation against the edge cases (e.g. consumer debt → escalates).
 3. **Orchestrator + drafting agent.** Routing + message generation around the proven core.
 4. **Execution log (Agent Engine).** Turn on early so every test run produces audit/evidence.
-5. **Sending — mocked first.** Log "would send this" rather than send. Full loop demoable with
+5. **Sending - mocked first.** Log "would send this" rather than send. Full loop demoable with
    zero real messages.
 6. **Real integrations last.** Swap synthetic adapter for live Stripe pull + real email/SMS only
    once a pilot is signed. Small contained change *if* step 1's adapter boundary is clean.
 
-**Caution:** synthetic data is for building/testing logic ONLY — never for revenue or customer
+**Built ahead of the plan (intentionally bounded):** a real Gmail SMTP sender
+(`sending/email_sender.py` + `send_live.py`) exists already - but only as a *controlled
+self-test*. It is env-gated and force-redirects every message to the operator's own inbox
+(`SETTL_TEST_RECIPIENT`), so it proves the real-send path end-to-end without touching any
+customer. Customer outreach still waits on a signed pilot, exactly as step 6 says.
+
+**Caution:** synthetic data is for building/testing logic ONLY - never for revenue or customer
 evidence. The submission needs real recovered dollars + real customer contacts. The synthetic
 phase is days, not weeks; the moment the engine works on fake data, the game is "point it at one
 real customer's real invoices." Build + sell in parallel (partner hunts pilots while you build).
@@ -191,7 +213,7 @@ Grant outreach is the same engine pointed at a different data source.
 
 **Narrative for the written submission:** "We built an autonomous outreach-and-recovery engine.
 We proved it on collections, where money moves fastest and the AI's decisions are most legible.
-The same engine extends to grant outreach for researchers and nonprofits — our roadmap — where
+The same engine extends to grant outreach for researchers and nonprofits - our roadmap - where
 it can widen access to funding for people without a development office." Mission in the *story*,
 not in the *scope*.
 
@@ -201,7 +223,7 @@ not in the *scope*.
 
 - GitHub repo shared with testing@devpost.com and judging@hacker.fund
 - 3-min video showing AI live in production executing key decisions
-- 500–1000 word narrative: what AI does vs. humans, economic opportunity created, the build story
+- 500-1000 word narrative: what AI does vs. humans, economic opportunity created, the build story
 - Revenue evidence (Stripe export / bank statement / P&L) + corporate ID if available
 - Expenses incl. marketing/customer-acquisition spend (disclose even if zero)
 - Product evidence: agent execution logs, API usage, dashboard screenshots
@@ -211,7 +233,7 @@ not in the *scope*.
 
 ## 8. Open items to resolve
 
-- **Cold-acquisition playbook** — week-1 plan to land 3 pilots with no warm channel (the real bottleneck).
-- **Compliance decision spec** — the explicit enumerated "send autonomously vs. escalate" rule list (core agent logic + best demo artifact).
-- **Entity / OPT question** — whose name revenue lands in; resolve before any money moves.
-- **Stat verification** — re-check market figures against primary sources before they go in the submission; match the stat to who we actually sell to (freelancer vs. SMB numbers).
+- **Cold-acquisition playbook** - week-1 plan to land 3 pilots with no warm channel (the real bottleneck).
+- **Compliance decision spec** - the explicit enumerated "send autonomously vs. escalate" rule list (core agent logic + best demo artifact).
+- **Entity / OPT question** - whose name revenue lands in; resolve before any money moves.
+- **Stat verification** - re-check market figures against primary sources before they go in the submission; match the stat to who we actually sell to (freelancer vs. SMB numbers).

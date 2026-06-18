@@ -1,10 +1,10 @@
-"""The sending seam shared by every sender — mock and real alike.
+"""The sending seam shared by every sender - mock and real alike.
 
 One guarantee lives here so no sender can forget it: **a sender never acts on a
 message the compliance gate did not clear.** ``GatedSender.send`` performs the
 refusal + logging centrally and delegates only the actual delivery to subclasses'
 ``_deliver``. The mock sender's "would send …" and the real Gmail sender both
-inherit the refusal for free — the gate stays the single authority, and a
+inherit the refusal for free - the gate stays the single authority, and a
 mis-wired pipeline still cannot push an escalated message out.
 """
 
@@ -59,7 +59,7 @@ class GatedSender:
                 sent=False,
                 detail=(
                     f"WITHHELD {invoice.invoice_id}: compliance escalated "
-                    f"({', '.join(compliance.codes)}) — routed to human, not sent."
+                    f"({', '.join(compliance.codes)}) - routed to human, not sent."
                 ),
             )
         else:

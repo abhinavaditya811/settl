@@ -24,6 +24,7 @@ import {
   getMetrics,
   refreshBoard,
 } from "./api";
+import { useDemo } from "./DemoContext";
 
 interface Toast {
   tone: "ok" | "err";
@@ -54,6 +55,7 @@ export function useBoard(): BoardCtx {
 }
 
 export default function BoardProvider({ children }: { children: React.ReactNode }) {
+  const { demoEnabled } = useDemo();
   const [board, setBoard] = useState<BoardResponse | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -88,6 +90,13 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
   );
 
   useEffect(() => {
+    // No engine traffic until the operator opts into the demo board. A
+    // brand-new user sees the zero-state with no data fetched.
+    if (!demoEnabled) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     fetch("/api/health")
       .then((r) => r.json())
       .then((h) => setLiveSend(Boolean(h.live_send)))
@@ -95,7 +104,7 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     loadAll()
       .catch((e) => setError(String((e as Error).message ?? e)))
       .finally(() => setLoading(false));
-  }, [loadAll]);
+  }, [demoEnabled, loadAll]);
 
   useEffect(() => {
     if (!toast) return;
@@ -112,7 +121,7 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
         setToast(
           res.sent
             ? { tone: "ok", text: `${id} approved and sent.` }
-            : { tone: "err", text: `${id} not sent — ${res.detail}` },
+            : { tone: "err", text: `${id} not sent - ${res.detail}` },
         );
         return res;
       } catch (e) {

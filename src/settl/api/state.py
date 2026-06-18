@@ -1,20 +1,20 @@
-"""BoardState — the engine running in-process behind the API.
+"""BoardState - the engine running in-process behind the API.
 
 It runs the orchestrator over the dataset and holds the per-invoice results so the
 dashboard can read the board, drill into a trace, and approve a held draft.
 
 Sending is safe by default and opt-in for real:
 
-  * **Default — everything is mocked.** No email leaves; senders log "would send …".
-  * **Live mode — ``SETTL_LIVE_SEND=1`` *and* ``SETTL_TEST_RECIPIENT`` set.** Both
+  * **Default - everything is mocked.** No email leaves; senders log "would send …".
+  * **Live mode - ``SETTL_LIVE_SEND=1`` *and* ``SETTL_TEST_RECIPIENT`` set.** Both
     the board batch *and* approvals deliver real email, but every message is
-    force-redirected to ``SETTL_TEST_RECIPIENT`` — so a synthetic debtor address is
+    force-redirected to ``SETTL_TEST_RECIPIENT`` - so a synthetic debtor address is
     never emailed; everything lands in your own inbox for review.
 
 Note: in live mode the board batch sends on startup and on each "Re-run engine"
 (``/refresh``); reading the board (GET) never sends.
 
-State is in-memory and per-process — fine for a single-instance demo. Durable,
+State is in-memory and per-process - fine for a single-instance demo. Durable,
 multi-instance state (a real datastore) is a later concern.
 """
 
@@ -104,7 +104,7 @@ class BoardState:
 
         outstanding = in_flight = recovered = awaiting_amount = 0.0
         awaiting_count = 0
-        buckets = {"0–30 days": [0, 0.0], "31–60 days": [0, 0.0], "61+ days": [0, 0.0]}
+        buckets = {"0-30 days": [0, 0.0], "31-60 days": [0, 0.0], "61+ days": [0, 0.0]}
         in_flight_states = {
             TerminalState.SENT, TerminalState.AWAITING_APPROVAL, TerminalState.HELD,
         }
@@ -122,8 +122,8 @@ class BoardState:
                 awaiting_count += 1
                 awaiting_amount += amt
             if inv.status.value != "paid" and inv.days_overdue > 0:
-                key = "0–30 days" if inv.days_overdue <= 30 else (
-                    "31–60 days" if inv.days_overdue <= 60 else "61+ days"
+                key = "0-30 days" if inv.days_overdue <= 30 else (
+                    "31-60 days" if inv.days_overdue <= 60 else "61+ days"
                 )
                 buckets[key][0] += 1
                 buckets[key][1] += amt

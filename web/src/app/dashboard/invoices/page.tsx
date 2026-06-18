@@ -82,7 +82,7 @@ export default function InvoicesPage() {
     <>
       <PageHeader
         title="Invoices"
-        subtitle="Every invoice and how the agent handled it — click a row for the full trace"
+        subtitle="Every invoice and how the agent handled it - click a row for the full trace"
       />
       <Controls>
         <Search

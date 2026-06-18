@@ -8,7 +8,7 @@ re-verify payment status. For now we encode the structural rule only:
   * HELD → re-queue after the strategy's cooldown window.
   * SENT → re-queue for a follow-up (a fixed cadence stand-in until reconcile
     decides based on real payment/reply events).
-  * everything else is terminal — it does not loop.
+  * everything else is terminal - it does not loop.
 """
 
 from __future__ import annotations
@@ -32,13 +32,13 @@ def next_touch(result: PipelineResult) -> LoopDecision:
     """Decide whether (and when) an invoice re-enters the orchestrator."""
     if result.terminal_state is TerminalState.HELD:
         days = result.requeue_in_days or DEFAULT_FOLLOWUP_DAYS
-        return LoopDecision(True, days, f"on hold — revisit in {days}d")
+        return LoopDecision(True, days, f"on hold - revisit in {days}d")
 
     if result.terminal_state is TerminalState.SENT:
         return LoopDecision(
             True, DEFAULT_FOLLOWUP_DAYS,
-            f"sent — follow up in {DEFAULT_FOLLOWUP_DAYS}d if still unpaid "
+            f"sent - follow up in {DEFAULT_FOLLOWUP_DAYS}d if still unpaid "
             "(reconcile will confirm in Week 4)",
         )
 
-    return LoopDecision(False, None, f"terminal ({result.terminal_state.value}) — no re-queue")
+    return LoopDecision(False, None, f"terminal ({result.terminal_state.value}) - no re-queue")

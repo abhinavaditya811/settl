@@ -68,7 +68,7 @@ def test_repeat_clean_b2b_invoice_sends():
 
 def test_gate_blocks_a_bad_draft_on_the_chase_path():
     # A drafter that strays into a legal threat must be caught by the gate and
-    # escalated — even for an invoice that would otherwise send.
+    # escalated - even for an invoice that would otherwise send.
     threat = lambda inv, dec: "Pay now or we will sue you and report you to collections."
     results, _, _ = _run(draft_fn=threat)
     # INV-018 is a repeat payer (not first contact), so the only block is the threat.

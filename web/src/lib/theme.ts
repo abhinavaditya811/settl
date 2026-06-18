@@ -1,4 +1,4 @@
-// Light & dark design tokens. One shape, two palettes — components read only the
+// Light & dark design tokens. One shape, two palettes - components read only the
 // semantic names, never raw hex, so theming stays consistent.
 
 import type { TerminalState } from "./types";

@@ -3,6 +3,14 @@
 import styled from "styled-components";
 import Sidebar from "./Sidebar";
 import Toaster from "@/components/Toaster";
+import ThemeToggle from "@/components/ThemeToggle";
+
+const TopRight = styled.div`
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 20;
+`;
 
 const Layout = styled.div`
   display: grid;
@@ -26,6 +34,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <Main>
         <Content>{children}</Content>
       </Main>
+      <TopRight>
+        <ThemeToggle />
+      </TopRight>
       <Toaster />
     </Layout>
   );

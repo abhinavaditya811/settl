@@ -1,6 +1,6 @@
 """The orchestrator spine: route one invoice end-to-end.
 
-Pure coordination over *injected* agents — no SDK, no model calls here. The
+Pure coordination over *injected* agents - no SDK, no model calls here. The
 orchestrator decides nothing about safety itself; it sequences the agents that do:
 
     ingestion (validate/quarantine)
@@ -13,7 +13,7 @@ Two CLAUDE.md invariants are enforced structurally in this file:
     *always* runs the gate before the sender is ever called, and the orchestrator
     never second-guesses or overrides a gate result.
   * Pilot-mode human-in-the-loop: the gate raises ``FIRST_CONTACT_APPROVAL`` on the
-    first message to a new debtor. The orchestrator does not own that rule — it only
+    first message to a new debtor. The orchestrator does not own that rule - it only
     *classifies* the block: if approval is the sole reason the draft is otherwise
     clean and just needs one-tap sign-off (``AWAITING_APPROVAL``); any other rule
     means a real escalation (``ESCALATED``).
@@ -37,16 +37,16 @@ from settl.sending.base import Sender
 from settl.sending.mock_sender import MockSender
 
 # The gate code that means "clean draft, just needs one-tap human sign-off" rather
-# than a genuine safety problem. Owned by compliance/rules.py — referenced, not redefined.
+# than a genuine safety problem. Owned by compliance/rules.py - referenced, not redefined.
 _APPROVAL_CODE = "FIRST_CONTACT_APPROVAL"
 
 # A drafter turns (invoice, strategy decision) into a candidate message. The real
 # Gemini drafting agent (Week 2) implements this same shape; until then a benign
-# template stands in. The gate judges whatever this produces — never the drafter.
+# template stands in. The gate judges whatever this produces - never the drafter.
 Drafter = Callable[[Invoice, StrategyDecision], str]
 
 _DEFAULT_TEMPLATE = (
-    "Hi {name} — a friendly reminder that invoice {ref} for {amount} {currency} "
+    "Hi {name} - a friendly reminder that invoice {ref} for {amount} {currency} "
     "is past due ({days}d). Here is your secure payment link to settle it whenever "
     "convenient. Thank you!"
 )
@@ -99,7 +99,7 @@ class Orchestrator:
                 steps=[PipelineStep("ingestion", "quarantined", reason)],
                 detail=f"couldn't read invoice: {reason}",
             )
-        self._record(invoice, "ingestion", "accepted", "Invoice complete — actionable.")
+        self._record(invoice, "ingestion", "accepted", "Invoice complete - actionable.")
         steps = [PipelineStep("ingestion", "accepted", "complete")]
 
         # 1. Strategy (logs itself).
@@ -130,7 +130,7 @@ class Orchestrator:
     ) -> PipelineResult:
         """Human one-tap approval of a draft that was held for first-contact sign-off.
 
-        Re-runs the gate. The human may override ONLY ``FIRST_CONTACT_APPROVAL`` —
+        Re-runs the gate. The human may override ONLY ``FIRST_CONTACT_APPROVAL`` -
         if any other rule fires (the draft changed, the debtor disputed since, …)
         the approval is refused and the message escalates. This is the single path
         a first-contact message can legitimately reach the sender; the dashboard's
@@ -144,12 +144,12 @@ class Orchestrator:
             return PipelineResult(
                 invoice.invoice_id, TerminalState.ESCALATED, steps=steps,
                 message=message, channel=channel.value if channel else None,
-                detail=f"approval refused — unresolved: {','.join(sorted(other))}",
+                detail=f"approval refused - unresolved: {','.join(sorted(other))}",
             )
 
         # Only the first-contact hold remained → the human cleared it.
         approved = ComplianceResult(
-            GateDecision.PASS, [], "Human approved first contact — cleared to send."
+            GateDecision.PASS, [], "Human approved first contact - cleared to send."
         )
         self._record(invoice, "human_approval", "approved", approved.reasoning)
         steps.append(PipelineStep("human_approval", "approved", approved.reasoning))
@@ -176,10 +176,10 @@ class Orchestrator:
         if not result.passed:
             # The gate blocked. Classify why: a draft whose ONLY issue is the
             # first-contact rule is clean and just needs one-tap human sign-off;
-            # anything else is a genuine escalation. The gate stays the authority —
+            # anything else is a genuine escalation. The gate stays the authority -
             # either way the sender is never called on a non-passing result.
             if set(result.codes) == {_APPROVAL_CODE}:
-                reason = "Clean draft — holding for one-tap first-contact approval (pilot mode)."
+                reason = "Clean draft - holding for one-tap first-contact approval (pilot mode)."
                 self._record(invoice, "human_approval", "awaiting_approval", reason)
                 steps.append(PipelineStep("human_approval", "awaiting_approval", reason))
                 return self._finish(
