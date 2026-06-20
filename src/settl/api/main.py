@@ -41,8 +41,13 @@ from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import Invoice
 
-_RUNS = Path(__file__).resolve().parents[3] / "runs"
-_RUNS.mkdir(exist_ok=True)
+# Where the execution-log JSONL is written. Defaults to the repo's runs/ dir for
+# local dev; override with SETTL_RUNS_DIR on hosts with a read-only or
+# package-relative filesystem (e.g. SETTL_RUNS_DIR=/tmp/runs on Cloud Run).
+_RUNS = Path(
+    os.environ.get("SETTL_RUNS_DIR", Path(__file__).resolve().parents[3] / "runs")
+)
+_RUNS.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Settl Engine API", version="0.1.0")
 

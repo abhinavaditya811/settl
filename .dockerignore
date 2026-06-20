@@ -1,0 +1,16 @@
+# Keep the image small: only src/ is copied, but exclude everything heavy/secret
+# from the build context regardless.
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+web
+runs
+tests
+demo.py
+send_live.py
+.env
+.env.*
+*.md
