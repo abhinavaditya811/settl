@@ -1,6 +1,6 @@
 """Senders share one guarantee: never act on a message the gate didn't clear.
 
-Covers the mock sender, the real Gmail sender (SMTP mocked — no network, no creds),
+Covers the mock sender, the real Gmail sender (SMTP mocked - no network, no creds),
 and the orchestrator's human-approval action (the only path a first-contact message
 can legitimately reach the sender)."""
 
@@ -105,7 +105,7 @@ def test_approve_and_send_refuses_when_a_real_rule_remains():
     log = ExecutionLog()
     orch = Orchestrator(log=log, sender=MockSender(log=log))
     inv = _invoice(prior=[])
-    # A legal threat is a real violation — human approval cannot override it.
+    # A legal threat is a real violation - human approval cannot override it.
     res = orch.approve_and_send(inv, "Pay now or we will sue you.", Channel.EMAIL)
     assert res.terminal_state is TerminalState.ESCALATED
 

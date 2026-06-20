@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-# Legal threats — explicit or implied legal/collections action.
+# Legal threats - explicit or implied legal/collections action.
 LEGAL_THREAT = [
     r"\bsue\b",
     r"\blawsuit\b",

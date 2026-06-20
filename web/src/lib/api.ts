@@ -1,5 +1,5 @@
 // Client-side fetchers. They hit our own Next route handlers under /api/*, which
-// proxy to the FastAPI engine server-side — so the engine URL never reaches the
+// proxy to the FastAPI engine server-side - so the engine URL never reaches the
 // browser. Each returns parsed JSON or throws on a non-2xx response.
 
 import type {

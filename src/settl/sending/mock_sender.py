@@ -1,4 +1,4 @@
-"""Mock sender — logs exactly what it *would* send, contacts no real channel.
+"""Mock sender - logs exactly what it *would* send, contacts no real channel.
 
 The default sender for every offline run and test. It inherits the compliance
 refusal from ``GatedSender`` (it will not send on an ESCALATE result), so the only

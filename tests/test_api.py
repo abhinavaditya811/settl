@@ -1,6 +1,6 @@
 """API contract tests over the engine, using FastAPI's TestClient (no network).
 
-Proves the board, detail, trace, and the approval action behave — and that the
+Proves the board, detail, trace, and the approval action behave - and that the
 approval path mirrors the engine guarantees (first-contact clears to sent; a
 non-approvable invoice is refused with 409)."""
 
@@ -102,13 +102,13 @@ def _an_awaiting_id() -> str:
 def test_editable_approve_sends_a_clean_edited_message():
     r = client.post(
         f"/invoices/{_an_awaiting_id()}/approve",
-        json={"message": "Hi — a quick reminder, here is your payment link. Thanks!"},
+        json={"message": "Hi - a quick reminder, here is your payment link. Thanks!"},
     )
     assert r.status_code == 200 and r.json()["sent"] is True
 
 
 def test_editable_approve_rejects_an_edited_message_that_breaks_a_rule():
-    # The human edit is re-run through the gate — a threat cannot be approved.
+    # The human edit is re-run through the gate - a threat cannot be approved.
     r = client.post(
         f"/invoices/{_an_awaiting_id()}/approve",
         json={"message": "Pay now or we will sue you and report you to collections."},

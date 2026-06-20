@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import StyledComponentsRegistry from "@/lib/registry";
+import Providers from "@/lib/Providers";
 import AppThemeProvider from "@/lib/ThemeContext";
-import BoardProvider from "@/lib/BoardContext";
-import Shell from "@/components/shell/Shell";
 
 export const metadata: Metadata = {
-  title: "Settl — Recovery Dashboard",
+  title: "Settl - Recovery Dashboard",
   description:
     "Autonomous invoice recovery: see what the agent decided, and approve what needs a human.",
 };
@@ -19,11 +18,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <StyledComponentsRegistry>
-          <AppThemeProvider>
-            <BoardProvider>
-              <Shell>{children}</Shell>
-            </BoardProvider>
-          </AppThemeProvider>
+          <Providers>
+            <AppThemeProvider>{children}</AppThemeProvider>
+          </Providers>
         </StyledComponentsRegistry>
       </body>
     </html>

@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import styled from "styled-components";
 import { useBoard } from "@/lib/BoardContext";
-import ThemeToggle from "@/components/ThemeToggle";
+import { useDemo } from "@/lib/DemoContext";
 
 const NAV = [
-  { href: "/", label: "Overview", icon: "◫" },
-  { href: "/approvals", label: "Approvals", icon: "✓" },
-  { href: "/invoices", label: "Invoices", icon: "❏" },
-  { href: "/activity", label: "Activity", icon: "≡" },
+  { href: "/dashboard", label: "Overview", icon: "◫" },
+  { href: "/dashboard/approvals", label: "Approvals", icon: "✓" },
+  { href: "/dashboard/invoices", label: "Invoices", icon: "❏" },
+  { href: "/dashboard/activity", label: "Activity", icon: "≡" },
 ];
 
 const Aside = styled.aside`
@@ -110,9 +111,67 @@ const Live = styled.div<{ $live: boolean }>`
   }
 `;
 
+const DemoTag = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.status.awaiting_approval.fg};
+  background: ${({ theme }) => theme.status.awaiting_approval.bg};
+  button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+  }
+`;
+
+const Account = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  .who {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: ${({ theme }) => theme.textMuted};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: transparent;
+    color: ${({ theme }) => theme.textMuted};
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    &:hover {
+      background: ${({ theme }) => theme.surfaceAlt};
+      color: ${({ theme }) => theme.text};
+    }
+  }
+`;
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { board, liveSend } = useBoard();
+  const { demoEnabled, exitDemo } = useDemo();
+  const { data: session } = useSession();
   const awaiting = board?.summary.counts.awaiting_approval ?? 0;
 
   return (
@@ -122,7 +181,10 @@ export default function Sidebar() {
         <div className="name">Settl</div>
       </Brand>
       {NAV.map((n) => {
-        const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
+        const active =
+          n.href === "/dashboard"
+            ? pathname === "/dashboard"
+            : pathname.startsWith(n.href);
         return (
           <Item key={n.href} href={n.href} $active={active}>
             <span className="icon">{n.icon}</span>
@@ -135,13 +197,26 @@ export default function Sidebar() {
       })}
       <Spacer />
       <Footer>
+        {demoEnabled && (
+          <DemoTag>
+            <span>Demo data</span>
+            <button onClick={exitDemo}>Exit</button>
+          </DemoTag>
+        )}
         <Live $live={liveSend} title={
-          liveSend ? "Approvals send real email" : "Mock mode — approvals are simulated"
+          liveSend ? "Approvals send real email" : "Mock mode - approvals are simulated"
         }>
           <span className="dot" />
           {liveSend ? "Live email armed" : "Mock mode"}
         </Live>
-        <ThemeToggle />
+        {session?.user && (
+          <Account>
+            <span className="who" title={session.user.email ?? undefined}>
+              {session.user.email}
+            </span>
+            <button onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
+          </Account>
+        )}
       </Footer>
     </Aside>
   );

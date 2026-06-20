@@ -1,4 +1,4 @@
-"""Compliance gate — the safety boundary. These are the headline proofs:
+"""Compliance gate - the safety boundary. These are the headline proofs:
 the consumer-debt case and the disputed-invoice case escalate to a human
 instead of being sent."""
 
@@ -7,7 +7,7 @@ from settl.compliance import ComplianceGate, GateDecision
 from settl.data import load_synthetic_invoices
 from settl.sending import MockSender
 
-BENIGN = "Hi there — a friendly reminder that your invoice is past due. Payment link enclosed. Thanks!"
+BENIGN = "Hi there - a friendly reminder that your invoice is past due. Payment link enclosed. Thanks!"
 
 
 def _by_id():

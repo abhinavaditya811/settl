@@ -50,7 +50,7 @@
       "is_b2b": false,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "CONSUMER (non-B2B) debt — MUST trip the compliance gate"}
+      "raw": {"edge_case": "CONSUMER (non-B2B) debt - MUST trip the compliance gate"}
     },
     {
       "invoice_id": "INV-004",
@@ -69,7 +69,7 @@
         {"occurred_on": "2026-05-08", "direction": "outbound", "channel": "email", "summary": "first reminder"},
         {"occurred_on": "2026-05-15", "direction": "inbound", "channel": "email", "summary": "client disputes the charge, says scope was different"}
       ],
-      "raw": {"edge_case": "DISPUTED invoice — must escalate, never auto-respond"}
+      "raw": {"edge_case": "DISPUTED invoice - must escalate, never auto-respond"}
     },
     {
       "invoice_id": "INV-005",
@@ -87,7 +87,7 @@
       "prior_contacts": [
         {"occurred_on": "2026-05-27", "direction": "outbound", "channel": "email", "summary": "reminder"}
       ],
-      "raw": {"edge_case": "already PAID — strategy must skip, never chase"}
+      "raw": {"edge_case": "already PAID - strategy must skip, never chase"}
     },
     {
       "invoice_id": "INV-006",
@@ -106,7 +106,7 @@
         {"occurred_on": "2026-04-28", "direction": "outbound", "channel": "email", "summary": "reminder"},
         {"occurred_on": "2026-05-06", "direction": "inbound", "channel": "email", "summary": "asked to set up a payment plan / pay in installments"}
       ],
-      "raw": {"edge_case": "PAYMENT PLAN request — must escalate, do not auto-negotiate"}
+      "raw": {"edge_case": "PAYMENT PLAN request - must escalate, do not auto-negotiate"}
     },
     {
       "invoice_id": "INV-007",
@@ -164,7 +164,7 @@
         {"occurred_on": "2026-06-05", "direction": "outbound", "channel": "email", "summary": "reminder"},
         {"occurred_on": "2026-06-07", "direction": "outbound", "channel": "email", "summary": "reminder"}
       ],
-      "raw": {"edge_case": "contact-frequency limit — 3 touches in last 7 days"}
+      "raw": {"edge_case": "contact-frequency limit - 3 touches in last 7 days"}
     },
     {
       "invoice_id": "INV-010",
@@ -180,7 +180,7 @@
       "is_b2b": true,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "not yet due (future) — strategy must skip"}
+      "raw": {"edge_case": "not yet due (future) - strategy must skip"}
     },
     {
       "invoice_id": "INV-011",
@@ -196,7 +196,7 @@
       "is_b2b": true,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "malformed — zero amount + missing contact → quarantine"}
+      "raw": {"edge_case": "malformed - zero amount + missing contact → quarantine"}
     },
     {
       "invoice_id": "INV-012",
@@ -248,7 +248,7 @@
       "is_b2b": false,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "consumer AND paid — skip wins; never chase a paid invoice"}
+      "raw": {"edge_case": "consumer AND paid - skip wins; never chase a paid invoice"}
     },
     {
       "invoice_id": "INV-015",
@@ -299,7 +299,7 @@
       "is_b2b": false,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "consumer AND disputed — double escalation"}
+      "raw": {"edge_case": "consumer AND disputed - double escalation"}
     },
     {
       "invoice_id": "INV-018",
@@ -403,7 +403,7 @@
       "is_b2b": false,
       "late_fee_allowed": false,
       "prior_contacts": [],
-      "raw": {"edge_case": "consumer debt, small balance — must escalate (B2B-only)"}
+      "raw": {"edge_case": "consumer debt, small balance - must escalate (B2B-only)"}
     },
     {
       "invoice_id": "INV-024",

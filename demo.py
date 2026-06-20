@@ -1,12 +1,12 @@
 """Dry run: drive every synthetic invoice through the real orchestrator and show
-exactly how each one was handled — the decision-trace table, the unpaid-loop plan,
+exactly how each one was handled - the decision-trace table, the unpaid-loop plan,
 and a full JSON-Lines audit log written to ``runs/`` as the record of the run.
 
 Usage:
     PYTHONPATH=src .venv/bin/python demo.py            # table + write audit log
     PYTHONPATH=src .venv/bin/python demo.py --log      # also print the log JSON
 
-Synthetic data only — never for revenue or customer evidence (CLAUDE.md).
+Synthetic data only - never for revenue or customer evidence (CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from settl.orchestrator import Orchestrator, TerminalState, next_touch
 
 RUNS_DIR = Path(__file__).with_name("runs")
 
-# How each terminal state reads in the trace — the "knows when NOT to act" story.
+# How each terminal state reads in the trace - the "knows when NOT to act" story.
 _STATE_LABEL = {
     TerminalState.QUARANTINED: "QUARANTINE  → human (couldn't read it)",
     TerminalState.SKIPPED: "SKIP        → paid / not yet due",
@@ -71,7 +71,7 @@ def main(argv: list[str]) -> None:
         if counts[state]:
             print(f"  {state.value:18} {counts[state]}")
     sent_or_held = [r for r in results if r.should_requeue]
-    print(f"\nUnpaid loop — {len(sent_or_held)} invoice(s) re-queue:")
+    print(f"\nUnpaid loop - {len(sent_or_held)} invoice(s) re-queue:")
     for res in sent_or_held:
         loop = next_touch(res)
         print(f"  {res.invoice_id:9} {loop.reason}")

@@ -47,7 +47,7 @@ export default function ActivityPage() {
     <>
       <PageHeader
         title="Activity"
-        subtitle="Every agent decision, newest first — the audit trail behind each invoice"
+        subtitle="Every agent decision, newest first - the audit trail behind each invoice"
       />
       <Controls>
         <Chips options={chips} active={agent} onPick={setAgent} />

@@ -1,15 +1,15 @@
 """What happened to one invoice as it travelled the pipeline.
 
-These are pure value objects — no logic, no SDK. ``PipelineResult`` is the single
+These are pure value objects - no logic, no SDK. ``PipelineResult`` is the single
 return shape the orchestrator hands back per invoice, and it doubles as the row the
 demo/dashboard renders and the proof the audit log corroborates.
 
 ``TerminalState`` is the orchestrator's vocabulary for "where did this invoice end
 up", one step above the agents' own decisions:
 
-  QUARANTINED        validation failed — couldn't read it; flag to a human
+  QUARANTINED        validation failed - couldn't read it; flag to a human
   SKIPPED            nothing to do (paid, or not yet due)
-  HELD               actionable later (cooldown / frequency) — re-queue
+  HELD               actionable later (cooldown / frequency) - re-queue
   ESCALATED          routed to a human now (dispute / consumer, or the gate blocked)
   AWAITING_APPROVAL  clean draft cleared the gate, but it's first contact →
                      one-tap human approval before it can send (pilot-mode HITL)
