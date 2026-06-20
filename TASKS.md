@@ -56,13 +56,13 @@ flows straight into the gate. **Suggested owner:** B (A continues orchestrator h
 
 New module: `src/settl/agents/drafting/`
 
-- [ ] `drafting/prompt.py` — **~140** — build the customer-voice prompt from `Invoice` + `StrategyDecision` (tone, the_ask, late-fee flag, channel); pure string building, unit-testable.
-- [ ] 🔌 `drafting/model.py` — **~90** — `DraftModel` Protocol + `NoOpDraftModel` (returns a safe template) + `GeminiDraftModel` (Gemini 3 Pro call). Mirrors the strategy `model.py` seam pattern.
-- [ ] `drafting/grounding.py` — **~80** — light Vertex AI Search seam for customer voice/context; `NoOpGrounding` default now, real lookup later.
-- [ ] `drafting/agent.py` — **~90** — `DraftingAgent.draft(invoice, decision) → DraftedMessage`; calls grounding + model, logs the decision, returns the message for the gate.
-- [ ] `drafting/__init__.py` — **~15** — exports.
-- [ ] Wire into `orchestrator/pipeline.py` — drafting replaces the template on the CHASE path.
-- [ ] `tests/test_drafting.py` — **~120** — prompt-building tests + the **adversarial test**: a draft that strays into a legal threat / consumer-debt phrasing gets ESCALATED by the gate, not sent.
+- [x] `drafting/prompt.py` — **~140** — build the customer-voice prompt from `Invoice` + `StrategyDecision` (tone, the_ask, late-fee flag, channel); pure string building, unit-testable. *(141 lines; adds `safe_fallback()` shared with NoOp model.)*
+- [x] 🔌 `drafting/model.py` — **~90** — `DraftModel` Protocol + `NoOpDraftModel` (returns a safe template) + `GeminiDraftModel` (Gemini 3 Pro call). Mirrors the strategy `model.py` seam pattern. *(Gemini call is a deferred seam — wire against context7 docs once GCP exists, like `runtime.py`.)*
+- [x] `drafting/grounding.py` — **~80** — light Vertex AI Search seam for customer voice/context; `NoOpGrounding` default now, real lookup later. *(`VertexSearchGrounding` is a deferred seam.)*
+- [x] `drafting/agent.py` — **~90** — `DraftingAgent.draft(invoice, decision) → DraftedMessage`; calls grounding + model, logs the decision, returns the message for the gate.
+- [x] `drafting/__init__.py` — **~15** — exports.
+- [x] Wire into `orchestrator/pipeline.py` — drafting replaces the template on the CHASE path. *(DraftingAgent is now the default drafter; a `drafting` step is recorded in the trace.)*
+- [x] `tests/test_drafting.py` — **~120** — prompt-building tests + the **adversarial test**: a draft that strays into a legal threat / consumer-debt phrasing gets ESCALATED by the gate, not sent. *(10 tests; gate proven to decide at the gate directly AND end-to-end through the orchestrator.)*
 
 **Done when:** a Gemini-generated draft passes the gate on a clean B2B chase, and a
 deliberately bad prompt is caught and escalated. **The gate, not the LLM, decides.**
