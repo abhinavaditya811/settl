@@ -2,11 +2,11 @@
 
 Sits between every draft and every send. It runs the enumerated rules in rules.py
 and produces a single binary decision: PASS (safe to send) or ESCALATE (block and
-route to a human). It is deterministic and conservative — any rule firing escalates.
+route to a human). It is deterministic and conservative - any rule firing escalates.
 
 It evaluates two layers:
-  * invoice/state + human-in-the-loop rules — always run
-  * message-content rules — run when a drafted message is supplied
+  * invoice/state + human-in-the-loop rules - always run
+  * message-content rules - run when a drafted message is supplied
 
 In task 1 there is no drafting agent yet, so callers either omit the message (to
 check state-level safety) or pass a candidate string directly (how the tests prove
@@ -81,7 +81,7 @@ class ComplianceGate:
             )
         else:
             decision = GateDecision.PASS
-            reasoning = "All compliance rules cleared — safe to send."
+            reasoning = "All compliance rules cleared - safe to send."
 
         result = ComplianceResult(decision, violations, reasoning)
         if self._log is not None:

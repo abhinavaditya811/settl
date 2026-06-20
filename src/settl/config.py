@@ -2,8 +2,8 @@
 
 Reads simple ``KEY=VALUE`` lines from a local ``.env`` into ``os.environ`` so the
 real-send self-test (and later the dashboard) can pick up credentials without a
-third-party package. Existing environment variables always win — an exported value
-overrides the file — so this never clobbers what you set in the shell.
+third-party package. Existing environment variables always win - an exported value
+overrides the file - so this never clobbers what you set in the shell.
 
 The ``.env`` file is gitignored; secrets never enter source control.
 """

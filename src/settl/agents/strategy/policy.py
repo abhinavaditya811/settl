@@ -3,7 +3,7 @@
 This is the v1 decision core: given a canonical Invoice, decide whether and how to
 chase it (timing, channel, tone, the ask, late fee). It is pure and unit-testable
 with no model call. The Gemini 3 Pro judgment layer (DESIGN §3) plugs in later
-behind ``model.py`` to refine — never to override — these rules.
+behind ``model.py`` to refine - never to override - these rules.
 
 The strategy agent recommends; it is NOT the safety authority. The compliance gate
 is the only thing that can clear a message to send. Strategy still pre-flags the
@@ -30,7 +30,7 @@ class Action(str, Enum):
     CHASE = "chase"  # proceed to draft + compliance gate
     SKIP = "skip"  # nothing to do (paid, not yet due)
     HOLD = "hold"  # actionable later, but not right now (too soon / frequency)
-    REVIEW = "review"  # send to a human now (dispute / consumer — gate will confirm)
+    REVIEW = "review"  # send to a human now (dispute / consumer - gate will confirm)
 
 
 class Tone(str, Enum):
@@ -83,13 +83,13 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
 
     # 1. Never chase money that already landed.
     if invoice.status is InvoiceStatus.PAID:
-        return StrategyDecision(Action.SKIP, "Invoice is paid — no outreach.", factors=factors)
+        return StrategyDecision(Action.SKIP, "Invoice is paid - no outreach.", factors=factors)
 
     # 2. Not actually overdue yet → nothing to do.
     if invoice.days_overdue <= 0:
         return StrategyDecision(
             Action.SKIP,
-            f"Not yet due ({-invoice.days_overdue}d remaining) — no outreach.",
+            f"Not yet due ({-invoice.days_overdue}d remaining) - no outreach.",
             factors=factors,
         )
 
@@ -97,7 +97,7 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
     if invoice.status is InvoiceStatus.DISPUTED:
         return StrategyDecision(
             Action.REVIEW,
-            "Invoice is disputed — defer to human; do not auto-chase.",
+            "Invoice is disputed - defer to human; do not auto-chase.",
             escalation_hint="disputed",
             factors=factors,
         )
@@ -106,7 +106,7 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
     if not invoice.is_b2b:
         return StrategyDecision(
             Action.REVIEW,
-            "Non-B2B (consumer) debt — out of first-party/B2B scope; route to human.",
+            "Non-B2B (consumer) debt - out of first-party/B2B scope; route to human.",
             escalation_hint="consumer_debt",
             factors=factors,
         )
@@ -116,7 +116,7 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
     if days_since is not None and days_since < TOO_SOON_DAYS:
         return StrategyDecision(
             Action.HOLD,
-            f"Last touch was {days_since}d ago — too soon to re-contact.",
+            f"Last touch was {days_since}d ago - too soon to re-contact.",
             next_touch_in_days=TOO_SOON_DAYS - days_since,
             factors=factors,
         )
@@ -124,12 +124,12 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
         return StrategyDecision(
             Action.HOLD,
             f"{len(_recent_outbound(invoice))} touches in the last "
-            f"{RECENT_WINDOW_DAYS}d — back off to respect frequency limits.",
+            f"{RECENT_WINDOW_DAYS}d - back off to respect frequency limits.",
             next_touch_in_days=RECENT_WINDOW_DAYS,
             factors=factors,
         )
 
-    # 6. Healthy chase — pick tone/late-fee by how overdue it is.
+    # 6. Healthy chase - pick tone/late-fee by how overdue it is.
     days = invoice.days_overdue
     if days <= FRIENDLY_MAX_DAYS:
         tone, ask = Tone.FRIENDLY, "gentle nudge with the payment link"

@@ -1,4 +1,4 @@
-"""Sending — the gate-cleared delivery seam.
+"""Sending - the gate-cleared delivery seam.
 
 ``MockSender`` (default, offline) logs "would send …"; ``GmailSmtpSender`` is the
 contingent real-email path for a self-test. Both inherit the compliance refusal

@@ -2,10 +2,10 @@
 email the result to your own inbox via Gmail SMTP.
 
 This is a controlled self-test, not customer outreach: it builds a single invoice
-addressed to YOU and exercises the full path — strategy → draft → compliance gate →
-first-contact human approval → real send — writing every hop to a JSONL audit log.
+addressed to YOU and exercises the full path - strategy → draft → compliance gate →
+first-contact human approval → real send - writing every hop to a JSONL audit log.
 
-Setup — put your credentials in a local `.env` (gitignored):
+Setup - put your credentials in a local `.env` (gitignored):
     cp .env.example .env      # then fill in the three SETTL_SMTP_* values
 or export them in the shell (an exported value overrides the file):
     export SETTL_SMTP_USER="you@gmail.com"
@@ -37,7 +37,7 @@ RUNS_DIR = Path(__file__).with_name("runs")
 
 
 def _self_test_invoice(recipient: str) -> Invoice:
-    """A single, realistic B2B invoice addressed to you — first contact, so it
+    """A single, realistic B2B invoice addressed to you - first contact, so it
     exercises the one-tap approval before anything sends."""
     today = date.today()
     return Invoice(
@@ -55,7 +55,7 @@ def _self_test_invoice(recipient: str) -> Invoice:
         late_fee_allowed=True,
         prior_contacts=[],  # first contact → must clear human approval
         as_of_date=today,
-        raw={"note": "live self-test invoice — synthetic, addressed to the operator"},
+        raw={"note": "live self-test invoice - synthetic, addressed to the operator"},
     )
 
 
@@ -88,7 +88,7 @@ def main(argv: list[str]) -> int:
 
     if result.terminal_state is not TerminalState.AWAITING_APPROVAL:
         # SENT (would only happen for a repeat contact), ESCALATED, etc.
-        print("\nNothing to approve — the pipeline did not stop for first-contact sign-off.")
+        print("\nNothing to approve - the pipeline did not stop for first-contact sign-off.")
         return 0
 
     print("\n--- draft awaiting your approval (first contact, pilot-mode HITL) ---")
@@ -98,7 +98,7 @@ def main(argv: list[str]) -> int:
     if not auto_yes:
         reply = input("Approve and SEND this real email? [y/N] ").strip().lower()
         if reply != "y":
-            print("Not approved — nothing sent. (Logged as held.)")
+            print("Not approved - nothing sent. (Logged as held.)")
             return 0
 
     approved = orch.approve_and_send(invoice, result.message, invoice_channel(invoice))

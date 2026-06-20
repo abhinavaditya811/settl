@@ -1,4 +1,4 @@
-"""The compliance gate — deterministic hard rules between every draft and send."""
+"""The compliance gate - deterministic hard rules between every draft and send."""
 
 from settl.compliance.gate import ComplianceGate, ComplianceResult, GateDecision
 from settl.compliance.rules import RuleViolation

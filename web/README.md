@@ -2,7 +2,7 @@
 
 Next.js (App Router, TypeScript) + styled-components frontend for the Settl engine.
 It shows the invoice board, the first-contact **approval queue** (with a working
-**Approve & Send**), and the per-invoice **decision trace** — and has a light/dark
+**Approve & Send**), and the per-invoice **decision trace** - and has a light/dark
 toggle. It never talks to the engine directly: Next route handlers under `/api/*`
 proxy to the FastAPI engine server-side, so the engine URL stays off the browser.
 
@@ -27,7 +27,7 @@ Open http://localhost:3000.
 
 ## Live email on approval (optional)
 
-By default the engine runs in **mock mode** — approvals are simulated, no email is
+By default the engine runs in **mock mode** - approvals are simulated, no email is
 sent (the header shows "Mock mode"). To make the **Approve & Send** button send a
 real email to your own inbox, start the engine with the self-test env set (see the
 root `.env`):

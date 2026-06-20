@@ -89,7 +89,7 @@ export default function InvoiceTable({
                 <td>{c.debtor_name}</td>
                 <td className="amt">{formatMoney(c.amount_due, c.currency)}</td>
                 <td className="ovd">
-                  {c.days_overdue > 0 ? `${c.days_overdue}d` : "—"}
+                  {c.days_overdue > 0 ? `${c.days_overdue}d` : "-"}
                 </td>
                 <td>
                   <StatusTag label={c.is_b2b ? "B2B" : "Consumer"} />

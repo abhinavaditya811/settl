@@ -13,7 +13,7 @@ from settl.data import load_synthetic_invoices
 from settl.schema import partition_invoices
 
 BENIGN_DRAFT = (
-    "Hi {name} — a friendly reminder that invoice {ref} is past due. "
+    "Hi {name} - a friendly reminder that invoice {ref} is past due. "
     "Here is your secure payment link to settle it. Thank you!"
 )
 

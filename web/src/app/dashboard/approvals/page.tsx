@@ -46,10 +46,10 @@ export default function ApprovalsPage() {
     <>
       <PageHeader
         title="Approvals"
-        subtitle="First-contact drafts held for your one-tap sign-off — review, edit, then send"
+        subtitle="First-contact drafts held for your one-tap sign-off - review, edit, then send"
       />
       {awaiting.length === 0 ? (
-        <EmptyState text="You’re all caught up — nothing is waiting for approval." />
+        <EmptyState text="You’re all caught up - nothing is waiting for approval." />
       ) : (
         <Stack>
           {awaiting.map((c) => (

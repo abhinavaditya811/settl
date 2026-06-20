@@ -1,13 +1,13 @@
 """🔌 Real email sender over Gmail SMTP.
 
 Sends a gate-cleared message as an email. It inherits the compliance refusal from
-``GatedSender`` — it can only ever be reached for a PASS result — and reads all
+``GatedSender`` - it can only ever be reached for a PASS result - and reads all
 credentials from the environment so nothing sensitive is ever hardcoded or
 committed:
 
     SETTL_SMTP_USER          your Gmail address (the authenticated sender)
     SETTL_SMTP_APP_PASSWORD  a Gmail *app password* (not your login password)
-    SETTL_TEST_RECIPIENT     (optional) force every email to this address — a
+    SETTL_TEST_RECIPIENT     (optional) force every email to this address - a
                              safety belt for self-tests so a synthetic debtor
                              address can never be emailed by accident.
 
@@ -69,7 +69,7 @@ class GmailSmtpSender(GatedSender):
         email = EmailMessage()
         email["From"] = self._user
         email["To"] = recipient
-        email["Subject"] = f"{self._subject_prefix} — {invoice.invoice_id}"
+        email["Subject"] = f"{self._subject_prefix} - {invoice.invoice_id}"
         email.set_content(message)
 
         with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, GMAIL_SMTP_SSL_PORT) as smtp:

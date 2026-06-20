@@ -131,7 +131,7 @@ export default function ApprovalItem({ card, message, approvingId, onApprove }: 
       />
 
       <Footer>
-        {dirty && <span className="note">Edited — the gate re-checks it on send</span>}
+        {dirty && <span className="note">Edited - the gate re-checks it on send</span>}
         {dirty && (
           <button className="reset" onClick={() => setText(original)}>
             Reset to AI draft
