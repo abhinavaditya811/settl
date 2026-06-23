@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from settl.agents.drafting import DraftedMessage, DraftingAgent, build_prompt
 from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
@@ -41,26 +42,19 @@ from settl.sending.mock_sender import MockSender
 _APPROVAL_CODE = "FIRST_CONTACT_APPROVAL"
 
 # A drafter turns (invoice, strategy decision) into a candidate message. The real
-# Gemini drafting agent (Week 2) implements this same shape; until then a benign
-# template stands in. The gate judges whatever this produces - never the drafter.
-Drafter = Callable[[Invoice, StrategyDecision], str]
-
-_DEFAULT_TEMPLATE = (
-    "Hi {name} - a friendly reminder that invoice {ref} for {amount} {currency} "
-    "is past due ({days}d). Here is your secure payment link to settle it whenever "
-    "convenient. Thank you!"
-)
+# Gemini drafting agent implements this as ``DraftingAgent.draft`` (returns a
+# ``DraftedMessage``); a plain ``str``-returning callable can still stand in for it
+# (tests, custom drafters). The gate judges whatever this produces - never the drafter.
+Drafter = Callable[[Invoice, StrategyDecision], "DraftedMessage | str"]
 
 
 def default_draft(invoice: Invoice, decision: StrategyDecision) -> str:
-    """Safe deterministic stand-in for the drafting agent."""
-    return _DEFAULT_TEMPLATE.format(
-        name=invoice.debtor_name,
-        ref=invoice.invoice_id,
-        amount=invoice.amount_due,
-        currency=invoice.currency,
-        days=invoice.days_overdue,
-    )
+    """Safe deterministic stand-in: the drafting prompt's compliant fallback.
+
+    Shares its wording with ``NoOpDraftModel`` (one source of truth) so the offline
+    default and any explicit fallback produce the same gate-clearing message.
+    """
+    return build_prompt(invoice, decision).safe_fallback()
 
 
 class Orchestrator:
@@ -74,13 +68,17 @@ class Orchestrator:
         strategy: StrategyAgent | None = None,
         gate: ComplianceGate | None = None,
         sender: Sender | None = None,
-        draft_fn: Drafter = default_draft,
+        drafter: DraftingAgent | None = None,
+        draft_fn: Drafter | None = None,
     ) -> None:
         self._log = log
         self._strategy = strategy or StrategyAgent(log=log)
         self._gate = gate or ComplianceGate(log=log)
         self._sender = sender or MockSender(log=log)
-        self._draft_fn = draft_fn
+        # The drafting agent (the visible AI) is the default producer. A bare
+        # ``draft_fn`` can still be injected to stand in for it.
+        self._drafter = drafter or DraftingAgent(log=log)
+        self._draft_fn = draft_fn or self._drafter.draft
 
     # -- public API -----------------------------------------------------------
 
@@ -166,7 +164,10 @@ class Orchestrator:
     def _run_chase(
         self, invoice: Invoice, decision: StrategyDecision, steps: list[PipelineStep]
     ) -> PipelineResult:
-        message = self._draft_fn(invoice, decision)
+        drafted = self._draft_fn(invoice, decision)
+        message = drafted.text if isinstance(drafted, DraftedMessage) else str(drafted)
+        source = drafted.source if isinstance(drafted, DraftedMessage) else "template"
+        steps.append(PipelineStep("drafting", source, "candidate drafted for the gate"))
         channel = decision.channel.value if decision.channel else None
 
         # The gate is the only authority that clears a send.
