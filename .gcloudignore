@@ -1,0 +1,13 @@
+# Controls what `gcloud run deploy --source .` uploads to Cloud Build.
+# The engine image only needs src/, Dockerfile, and pyproject.toml.
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+web
+runs
+tests
+.env
+.env.*
