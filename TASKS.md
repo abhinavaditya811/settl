@@ -79,11 +79,11 @@ the gate. **Suggested owner:** A on judgment+bounds, B on red-team
 
 Extends `src/settl/agents/strategy/` (Protocol already exists in `model.py`)
 
-- [ ] 🔌 `agents/strategy/judgment.py` - **~110** - `GeminiJudgmentModel` implementing the existing `JudgmentModel` Protocol; nudges tone/timing only.
-- [ ] `agents/strategy/bounds.py` - **~80** - safety wrapper that clamps any model output: it may adjust tone/timing/late-fee, but **can never change `action`** (no SKIP/REVIEW→send) and never touches the gate.
-- [ ] Wire `bounds` around `judgment` in `agents/strategy/agent.py` (model output always passes through the clamp).
-- [ ] `tests/test_judgment.py` - **~110** - model refines a CHASE's tone; tests prove it cannot flip an escalation/skip into a send and cannot bypass the gate.
-- [ ] `tests/test_gate_redteam.py` (B) - **~120** - adversarial messages (paraphrased threats, indirect overclaims, tone breaches) all ESCALATE; expand `compliance/patterns.py` only if a real gap is found.
+- [x] 🔌 `agents/strategy/judgment.py` - `GeminiJudgmentModel` implementing the existing `JudgmentModel` Protocol; nudges tone/late-fee only. *(LIVE google-genai call, env-overridable model id, fail-safe to the deterministic decision on any error.)*
+- [x] `agents/strategy/bounds.py` - safety wrapper that clamps any model output: it may adjust tone/timing/late-fee, but **can never change `action`** (no SKIP/REVIEW→send), never adds a fee the terms forbid, and never touches the gate.
+- [x] Wire `bounds` around `judgment` in `agents/strategy/agent.py` - `StrategyAgent` always wraps the model in `ClampedModel`, so model output cannot bypass the clamp.
+- [x] `tests/test_judgment.py` - 14 tests: clamp can't be tricked into a send by a rogue model; tone refinement applies; Gemini model is fail-safe (no key / API error -> deterministic decision).
+- [x] `tests/test_gate_redteam.py` (B) - 19 tests: direct + paraphrased threats, indirect overclaims, tone breaches all ESCALATE; a clean firm message still passes. Closed two real gaps in `compliance/patterns.py` (legal proceedings/remedies, credit agencies/reporting).
 
 **Done when:** judgment improves drafts/tone on the happy path, and no test can make the
 model produce a send that the deterministic policy/gate would have blocked.
