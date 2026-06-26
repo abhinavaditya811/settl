@@ -26,14 +26,8 @@ from pydantic import BaseModel, Field
 
 from settl.agents.strategy.policy import Action, StrategyDecision, Tone
 from settl.audit.execution_log import ExecutionLog
-from settl.config import load_dotenv
+from settl.config import DEFAULT_GEMINI_MODEL, load_dotenv
 from settl.schema.invoice import Invoice
-
-# Gemini 3 Pro per DESIGN §3. The plain "gemini-3-pro" id does not exist; the
-# real current id is the preview one. Free-tier keys often lack quota for it (429),
-# in which case set GEMINI_MODEL to a free-tier model (e.g. gemini-2.5-flash) - the
-# model is fail-safe either way.
-DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
 _SYSTEM_INSTRUCTION = (
     "You are a B2B accounts-receivable tone assistant. You receive an overdue "

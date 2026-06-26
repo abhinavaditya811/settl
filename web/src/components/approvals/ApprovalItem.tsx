@@ -54,6 +54,15 @@ const Draft = styled.textarea`
   }
 `;
 
+const PayLink = styled.a`
+  display: inline-block;
+  margin-top: 10px;
+  word-break: break-all;
+  font-size: 12.5px;
+  color: ${({ theme }) => theme.accent};
+  text-decoration: underline;
+`;
+
 const Footer = styled.div`
   display: flex;
   align-items: center;
@@ -129,6 +138,12 @@ export default function ApprovalItem({ card, message, approvingId, onApprove }: 
         onChange={(e) => setText(e.target.value)}
         spellCheck
       />
+
+      {card.payment_link && (
+        <PayLink href={card.payment_link} target="_blank" rel="noopener noreferrer">
+          Payment link ↗ (the &#123;&#123;payment_link&#125;&#125; placeholder resolves to this on send)
+        </PayLink>
+      )}
 
       <Footer>
         {dirty && <span className="note">Edited - the gate re-checks it on send</span>}

@@ -2,6 +2,7 @@
 
 export type TerminalState =
   | "sent"
+  | "recovered"
   | "awaiting_approval"
   | "escalated"
   | "skipped"
@@ -17,6 +18,7 @@ export interface InvoiceCard {
   status: string; // open | paid | partial | disputed
   is_b2b: boolean;
   channel: string | null;
+  payment_link: string | null;
   terminal_state: TerminalState;
   detail: string;
   needs_human: boolean;
@@ -31,6 +33,7 @@ export interface StepView {
 
 export interface InvoiceDetail extends InvoiceCard {
   message: string | null;
+  message_preview: string | null; // message with {{payment_link}} resolved (read-only)
   steps: StepView[];
 }
 
@@ -58,6 +61,10 @@ export interface ApproveResponse {
   detail: string;
   sent: boolean;
   message: string | null;
+}
+
+export interface CheckPaymentsResponse {
+  recovered: string[]; // invoice ids auto-reconciled to RECOVERED on this poll
 }
 
 export interface ActivityEntry {
@@ -88,6 +95,7 @@ export interface Metrics {
 // Display metadata for each terminal state - label + which theme color key to use.
 export const STATE_META: Record<TerminalState, { label: string; tone: TerminalState }> = {
   sent: { label: "Sent", tone: "sent" },
+  recovered: { label: "Recovered", tone: "recovered" },
   awaiting_approval: { label: "Awaiting approval", tone: "awaiting_approval" },
   escalated: { label: "Escalated", tone: "escalated" },
   skipped: { label: "Skipped", tone: "skipped" },
@@ -97,6 +105,7 @@ export const STATE_META: Record<TerminalState, { label: string; tone: TerminalSt
 
 export const STATE_ORDER: TerminalState[] = [
   "awaiting_approval",
+  "recovered",
   "sent",
   "escalated",
   "held",

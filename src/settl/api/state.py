@@ -21,15 +21,31 @@ multi-instance state (a real datastore) is a later concern.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
+from settl.agents.reconcile import (
+    OperatorNotifier,
+    PaymentEvent,
+    ReconcileAgent,
+    ReconcileStatus,
+)
 from settl.audit import ExecutionLog
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.orchestrator import Orchestrator, TerminalState
-from settl.orchestrator.result import PipelineResult
+from settl.orchestrator.result import PipelineResult, PipelineStep
 from settl.schema.invoice import Channel, Invoice
 from settl.sending import GmailSmtpSender, MockSender
+
+# In-flight states a payment can still arrive for (so reconcile polls only these).
+_RECONCILABLE_STATES = (
+    TerminalState.SENT,
+    TerminalState.AWAITING_APPROVAL,
+    TerminalState.HELD,
+    TerminalState.ESCALATED,
+)
 
 
 class BoardState:
@@ -39,7 +55,10 @@ class BoardState:
         # One sender drives both the board batch and approvals: live (redirected to
         # the test inbox) when explicitly armed, mock otherwise.
         sender = self._make_sender()
-        self._board = Orchestrator(log=self._log, sender=sender)
+        drafter = self._make_drafter()
+        self._minter = self._make_minter()
+        self._reconciler = ReconcileAgent(log=self._log, notifier=OperatorNotifier(log=self._log))
+        self._board = Orchestrator(log=self._log, sender=sender, drafter=drafter)
         self._approver = Orchestrator(log=self._log, sender=sender)
         self._invoices: dict[str, Invoice] = {}
         self._results: dict[str, PipelineResult] = {}
@@ -58,15 +77,57 @@ class BoardState:
                 return sender
         return MockSender(log=self._log)
 
+    def _make_drafter(self):
+        """Real Gemini drafting (the visible AI) when a key is configured; the offline
+        template otherwise. Drafting only affects the board batch - approvals re-gate a
+        provided message and never re-draft."""
+        from settl.agents.drafting import DraftingAgent
+        from settl.agents.drafting.model import GeminiDraftModel
+
+        if self.gemini_enabled:
+            return DraftingAgent(log=self._log, model=GeminiDraftModel())
+        return DraftingAgent(log=self._log)
+
     @property
     def live_send_enabled(self) -> bool:
         return isinstance(self._board._sender, GmailSmtpSender)
+
+    @property
+    def gemini_enabled(self) -> bool:
+        """Real Gemini drafting is opt-in (SETTL_USE_GEMINI=1) *and* needs a key, so the
+        default board run - and the test suite - stays offline and deterministic."""
+        armed = os.environ.get("SETTL_USE_GEMINI") == "1"
+        has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        return armed and has_key
+
+    def _make_minter(self):
+        """A Stripe link minter when armed (SETTL_USE_STRIPE=1 + a key), else None. Off
+        by default so the board never creates Stripe objects just because a key exists."""
+        from settl.payments import StripeLinkMinter, stripe_enabled
+
+        return StripeLinkMinter() if stripe_enabled() else None
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return self._minter is not None
+
+    def _enrich_payment_links(self, invoices: list[Invoice]) -> list[Invoice]:
+        """For the demo, mint a real (test-mode) Stripe link per invoice so the board,
+        drawer, and email all carry a payable link. Minting is cached per invoice and
+        fail-safe (an invoice keeps its existing link if minting returns None)."""
+        if self._minter is None:
+            return invoices
+        out: list[Invoice] = []
+        for inv in invoices:
+            url = self._minter.mint(inv)
+            out.append(inv.model_copy(update={"payment_link": url}) if url else inv)
+        return out
 
     # -- queries --------------------------------------------------------------
 
     def refresh(self) -> None:
         self._log.clear()  # fresh run → don't double-count the activity feed
-        invoices = load_synthetic_invoices()
+        invoices = self._enrich_payment_links(load_synthetic_invoices())
         self._invoices = {inv.invoice_id: inv for inv in invoices}
         self._results = {r.invoice_id: r for r in self._board.run_batch(invoices)}
 
@@ -112,16 +173,21 @@ class BoardState:
             if inv.currency != primary:
                 continue
             amt = float(inv.amount_due)
-            if inv.status.value == "paid":
+            # Recovered = paid at ingestion OR reconciled to RECOVERED by the engine.
+            is_recovered = (
+                inv.status.value == "paid"
+                or res.terminal_state is TerminalState.RECOVERED
+            )
+            if is_recovered:
                 recovered += amt
             else:
                 outstanding += amt
-            if res.terminal_state in in_flight_states:
+            if not is_recovered and res.terminal_state in in_flight_states:
                 in_flight += amt
             if res.terminal_state is TerminalState.AWAITING_APPROVAL:
                 awaiting_count += 1
                 awaiting_amount += amt
-            if inv.status.value != "paid" and inv.days_overdue > 0:
+            if not is_recovered and inv.days_overdue > 0:
                 key = "0-30 days" if inv.days_overdue <= 30 else (
                     "31-60 days" if inv.days_overdue <= 60 else "61+ days"
                 )
@@ -159,3 +225,36 @@ class BoardState:
         new_result = self._approver.approve_and_send(invoice, outgoing, channel)
         self._results[invoice_id] = new_result  # reflect the outcome on the board
         return new_result
+
+    def check_payments(self) -> list[str]:
+        """Poll Stripe for paid payment links and auto-reconcile any that were paid:
+        record the fee, notify the operator, and flip the board to RECOVERED. Returns
+        the invoice ids newly recovered this poll. No-op (returns []) when Stripe isn't
+        armed, so the default board and the test suite stay offline/deterministic."""
+        if self._minter is None:
+            return []
+        recovered: list[str] = []
+        for invoice_id, result in list(self._results.items()):
+            if result.terminal_state not in _RECONCILABLE_STATES:
+                continue
+            link_id = self._minter.link_id(invoice_id)
+            if not link_id:
+                continue
+            paid = self._minter.paid_total(link_id)
+            if paid is None:
+                continue
+            invoice = self._invoices[invoice_id]
+            event = PaymentEvent(
+                invoice_id=invoice_id, amount=paid, occurred_on=date.today(),
+                source="stripe", reference=link_id,
+            )
+            outcome = self._reconciler.reconcile(invoice, [event])
+            if outcome.status is ReconcileStatus.PAID:
+                self._results[invoice_id] = replace(
+                    result,
+                    terminal_state=TerminalState.RECOVERED,
+                    detail=outcome.reasoning,
+                    steps=[*result.steps, PipelineStep("reconcile", "paid", outcome.reasoning)],
+                )
+                recovered.append(invoice_id)
+        return recovered

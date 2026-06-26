@@ -35,6 +35,7 @@ class InvoiceCard(BaseModel):
     status: str  # invoice status: open/paid/partial/disputed
     is_b2b: bool
     channel: str | None = None
+    payment_link: str | None = None  # the debtor's pay link (customer's own processor)
     terminal_state: str  # sent / awaiting_approval / escalated / ...
     detail: str
     needs_human: bool
@@ -44,7 +45,8 @@ class InvoiceCard(BaseModel):
 class InvoiceDetail(InvoiceCard):
     """A card plus the full draft and the per-hop pipeline steps."""
 
-    message: str | None = None
+    message: str | None = None  # the gated draft - keeps the {{payment_link}} placeholder
+    message_preview: str | None = None  # read-only: placeholder resolved to the real link
     steps: list[StepView] = []
 
 
@@ -68,6 +70,10 @@ class ApproveResponse(BaseModel):
 
 class ApproveBody(BaseModel):
     message: str | None = None  # optional human-edited draft (re-checked by the gate)
+
+
+class CheckPaymentsResponse(BaseModel):
+    recovered: list[str]  # invoice ids auto-reconciled to RECOVERED on this poll
 
 
 class ActivityEntry(BaseModel):

@@ -6,6 +6,7 @@ import type {
   ActivityEntry,
   ApproveResponse,
   BoardResponse,
+  CheckPaymentsResponse,
   InvoiceDetail,
   Metrics,
   TraceEntry,
@@ -49,3 +50,7 @@ export const approveInvoice = (id: string, message?: string) =>
     headers: message ? { "content-type": "application/json" } : undefined,
     body: message ? JSON.stringify({ message }) : undefined,
   });
+
+// Poll the engine for Stripe payments; it auto-reconciles any that were paid.
+export const checkPayments = () =>
+  getJSON<CheckPaymentsResponse>("/api/check-payments", { method: "POST" });

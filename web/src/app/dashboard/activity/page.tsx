@@ -7,6 +7,7 @@ import { prettyAgent } from "@/lib/format";
 import { PageHeader, Card, Loading, ErrorState } from "@/components/ui";
 import Chips, { type ChipOption } from "@/components/Chips";
 import ActivityList from "@/components/ActivityList";
+import InvoiceDrawer from "@/components/InvoiceDrawer";
 
 const Controls = styled.div`
   margin-bottom: 16px;
@@ -17,8 +18,15 @@ const FeedCard = styled(Card)`
 `;
 
 export default function ActivityPage() {
-  const { activity, loading, error } = useBoard();
+  const { activity, loading, error, approvingId, approve } = useBoard();
   const [agent, setAgent] = useState("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleApprove = async (id: string, message?: string) => {
+    await approve(id, message);
+    setRefreshKey((k) => k + 1);
+  };
 
   const chips: ChipOption[] = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -53,8 +61,18 @@ export default function ActivityPage() {
         <Chips options={chips} active={agent} onPick={setAgent} />
       </Controls>
       <FeedCard>
-        <ActivityList entries={rows} />
+        <ActivityList entries={rows} onSelect={setSelectedId} />
       </FeedCard>
+
+      {selectedId && (
+        <InvoiceDrawer
+          invoiceId={selectedId}
+          approvingId={approvingId}
+          onApprove={handleApprove}
+          onClose={() => setSelectedId(null)}
+          refreshKey={refreshKey}
+        />
+      )}
     </>
   );
 }
