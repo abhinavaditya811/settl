@@ -72,6 +72,10 @@ class ApproveBody(BaseModel):
     message: str | None = None  # optional human-edited draft (re-checked by the gate)
 
 
+class CheckPaymentsResponse(BaseModel):
+    recovered: list[str]  # invoice ids auto-reconciled to RECOVERED on this poll
+
+
 class ActivityEntry(BaseModel):
     timestamp: str
     invoice_id: str

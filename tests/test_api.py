@@ -31,6 +31,35 @@ def test_detail_surfaces_payment_link():
     assert body["payment_link"] in body["message_preview"]
 
 
+def test_check_payments_is_noop_without_stripe():
+    # No Stripe armed → nothing to reconcile, deterministic.
+    assert client.post("/check-payments").json() == {"recovered": []}
+
+
+def test_check_payments_auto_reconciles_a_paid_link():
+    from decimal import Decimal
+
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()  # fresh, offline (no Stripe / live send)
+    sent = [i for i, r in board._results.items() if r.terminal_state is TerminalState.SENT]
+    assert sent
+    target = sent[0]
+
+    class _FakeMinter:  # stands in for a Stripe-armed minter reporting one paid link
+        def link_id(self, iid):
+            return f"plink_{iid}" if iid == target else None
+
+        def paid_total(self, link_id):
+            return Decimal("1000000")  # >= any invoice amount → PAID
+
+    board._minter = _FakeMinter()
+    assert board.check_payments() == [target]
+    assert board._results[target].terminal_state is TerminalState.RECOVERED
+    assert board.check_payments() == []  # idempotent: already recovered
+
+
 def test_board_lists_all_invoices_with_summary():
     r = client.get("/invoices")
     assert r.status_code == 200

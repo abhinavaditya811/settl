@@ -21,15 +21,31 @@ multi-instance state (a real datastore) is a later concern.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
+from settl.agents.reconcile import (
+    OperatorNotifier,
+    PaymentEvent,
+    ReconcileAgent,
+    ReconcileStatus,
+)
 from settl.audit import ExecutionLog
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.orchestrator import Orchestrator, TerminalState
-from settl.orchestrator.result import PipelineResult
+from settl.orchestrator.result import PipelineResult, PipelineStep
 from settl.schema.invoice import Channel, Invoice
 from settl.sending import GmailSmtpSender, MockSender
+
+# In-flight states a payment can still arrive for (so reconcile polls only these).
+_RECONCILABLE_STATES = (
+    TerminalState.SENT,
+    TerminalState.AWAITING_APPROVAL,
+    TerminalState.HELD,
+    TerminalState.ESCALATED,
+)
 
 
 class BoardState:
@@ -41,6 +57,7 @@ class BoardState:
         sender = self._make_sender()
         drafter = self._make_drafter()
         self._minter = self._make_minter()
+        self._reconciler = ReconcileAgent(log=self._log, notifier=OperatorNotifier(log=self._log))
         self._board = Orchestrator(log=self._log, sender=sender, drafter=drafter)
         self._approver = Orchestrator(log=self._log, sender=sender)
         self._invoices: dict[str, Invoice] = {}
@@ -156,16 +173,21 @@ class BoardState:
             if inv.currency != primary:
                 continue
             amt = float(inv.amount_due)
-            if inv.status.value == "paid":
+            # Recovered = paid at ingestion OR reconciled to RECOVERED by the engine.
+            is_recovered = (
+                inv.status.value == "paid"
+                or res.terminal_state is TerminalState.RECOVERED
+            )
+            if is_recovered:
                 recovered += amt
             else:
                 outstanding += amt
-            if res.terminal_state in in_flight_states:
+            if not is_recovered and res.terminal_state in in_flight_states:
                 in_flight += amt
             if res.terminal_state is TerminalState.AWAITING_APPROVAL:
                 awaiting_count += 1
                 awaiting_amount += amt
-            if inv.status.value != "paid" and inv.days_overdue > 0:
+            if not is_recovered and inv.days_overdue > 0:
                 key = "0-30 days" if inv.days_overdue <= 30 else (
                     "31-60 days" if inv.days_overdue <= 60 else "61+ days"
                 )
@@ -203,3 +225,36 @@ class BoardState:
         new_result = self._approver.approve_and_send(invoice, outgoing, channel)
         self._results[invoice_id] = new_result  # reflect the outcome on the board
         return new_result
+
+    def check_payments(self) -> list[str]:
+        """Poll Stripe for paid payment links and auto-reconcile any that were paid:
+        record the fee, notify the operator, and flip the board to RECOVERED. Returns
+        the invoice ids newly recovered this poll. No-op (returns []) when Stripe isn't
+        armed, so the default board and the test suite stay offline/deterministic."""
+        if self._minter is None:
+            return []
+        recovered: list[str] = []
+        for invoice_id, result in list(self._results.items()):
+            if result.terminal_state not in _RECONCILABLE_STATES:
+                continue
+            link_id = self._minter.link_id(invoice_id)
+            if not link_id:
+                continue
+            paid = self._minter.paid_total(link_id)
+            if paid is None:
+                continue
+            invoice = self._invoices[invoice_id]
+            event = PaymentEvent(
+                invoice_id=invoice_id, amount=paid, occurred_on=date.today(),
+                source="stripe", reference=link_id,
+            )
+            outcome = self._reconciler.reconcile(invoice, [event])
+            if outcome.status is ReconcileStatus.PAID:
+                self._results[invoice_id] = replace(
+                    result,
+                    terminal_state=TerminalState.RECOVERED,
+                    detail=outcome.reasoning,
+                    steps=[*result.steps, PipelineStep("reconcile", "paid", outcome.reasoning)],
+                )
+                recovered.append(invoice_id)
+        return recovered

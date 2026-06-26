@@ -30,6 +30,7 @@ from settl.api.schemas import (
     ApproveResponse,
     BoardResponse,
     BoardSummary,
+    CheckPaymentsResponse,
     InvoiceCard,
     InvoiceDetail,
     Metrics,
@@ -173,6 +174,14 @@ def approve(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse
         sent=result.terminal_state is TerminalState.SENT,
         message=result.message,
     )
+
+
+@app.post("/check-payments", response_model=CheckPaymentsResponse)
+def check_payments() -> CheckPaymentsResponse:
+    """Poll Stripe for paid links and auto-reconcile (record fee, notify, RECOVERED).
+    No-op when Stripe isn't armed. The dashboard polls this so payment reflects on
+    its own - no manual marking."""
+    return CheckPaymentsResponse(recovered=state.check_payments())
 
 
 @app.post("/refresh", response_model=BoardResponse)

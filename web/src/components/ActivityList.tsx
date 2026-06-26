@@ -28,14 +28,22 @@ const List = styled.ul`
   padding: 0;
 `;
 
-const Entry = styled.li`
+const Entry = styled.li<{ $clickable?: boolean }>`
   display: grid;
   grid-template-columns: 14px 1fr auto;
   gap: 12px;
-  padding: 13px 2px;
+  padding: 13px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
   border-bottom: 1px solid ${({ theme }) => theme.border};
+  cursor: ${({ $clickable }) => ($clickable ? "pointer" : "default")};
+  transition: background 0.12s ease;
   &:last-child {
     border-bottom: none;
+  }
+  &:hover {
+    background: ${({ theme, $clickable }) =>
+      $clickable ? theme.surfaceAlt : "transparent"};
   }
 `;
 
@@ -84,16 +92,23 @@ const Time = styled.span`
 export default function ActivityList({
   entries,
   limit,
+  onSelect,
 }: {
   entries: ActivityEntry[];
   limit?: number;
+  onSelect?: (invoiceId: string) => void;
 }) {
   const rows = limit ? entries.slice(0, limit) : entries;
   if (rows.length === 0) return <EmptyState text="No activity yet." />;
   return (
     <List>
       {rows.map((e, i) => (
-        <Entry key={`${e.invoice_id}-${i}`}>
+        <Entry
+          key={`${e.invoice_id}-${i}`}
+          $clickable={!!onSelect}
+          onClick={onSelect ? () => onSelect(e.invoice_id) : undefined}
+          title={onSelect ? `Open ${e.invoice_id}'s trace` : undefined}
+        >
           <Dot $tone={TONE[e.decision] ?? "skipped"} />
           <Body>
             <div className="top">

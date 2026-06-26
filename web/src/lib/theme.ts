@@ -37,6 +37,7 @@ export const lightTheme: AppTheme = {
   shadow: "0 1px 2px rgba(16,24,40,0.04)",
   status: {
     sent: { fg: "#0f7b3f", bg: "#e6f4ea" },
+    recovered: { fg: "#047857", bg: "#ccefe0" },
     awaiting_approval: { fg: "#9a6700", bg: "#fff4d6" },
     escalated: { fg: "#b42318", bg: "#fde8e6" },
     skipped: { fg: "#4b5563", bg: "#eef0f3" },
@@ -58,6 +59,7 @@ export const darkTheme: AppTheme = {
   shadow: "0 1px 2px rgba(0,0,0,0.25)",
   status: {
     sent: { fg: "#3fb950", bg: "#132a1c" },
+    recovered: { fg: "#34d399", bg: "#0c2a20" },
     awaiting_approval: { fg: "#e3b341", bg: "#332810" },
     escalated: { fg: "#f85149", bg: "#3a1614" },
     skipped: { fg: "#9aa4b2", bg: "#21262d" },

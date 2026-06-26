@@ -17,6 +17,7 @@ class _Price:
 
 
 class _Link:
+    id = "plink_123"
     url = "https://buy.stripe.com/test_abc"
 
 
@@ -69,6 +70,54 @@ def test_mint_is_cached_per_invoice(monkeypatch):
     m.mint(inv)
     m.mint(inv)
     assert sum(1 for c in fc.calls if c[0] == "price") == 1  # minted once, then cached
+
+
+def test_mint_tracks_the_link_id_for_polling(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    inv = _inv(iid="INV-Z")
+    m = StripeLinkMinter(client=_FakeClient())
+    m.mint(inv)
+    assert m.link_id("INV-Z") == "plink_123"
+    assert m.link_id("INV-NONE") is None
+
+
+# --- payment detection (Stripe -> canonical event) ----------------------------
+
+
+class _Sess:
+    def __init__(self, payment_status, amount_total):
+        self.payment_status = payment_status
+        self.amount_total = amount_total
+
+
+class _SessList:
+    def __init__(self, data):
+        self.data = data
+
+
+class _SessionsRes:
+    def __init__(self, data):
+        self._data = data
+
+    def list(self, params, options=None):
+        return _SessList(self._data)
+
+
+class _CheckoutClient:
+    def __init__(self, sessions):
+        self.v1 = type("V1", (), {"checkout": type("C", (), {"sessions": _SessionsRes(sessions)})()})()
+
+
+def test_paid_total_sums_paid_sessions(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _CheckoutClient([_Sess("paid", 12000), _Sess("unpaid", 9900)])
+    assert StripeLinkMinter(client=fc).paid_total("plink_1") == Decimal("120.00")
+
+
+def test_paid_total_none_when_nothing_paid(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _CheckoutClient([_Sess("unpaid", 9900)])
+    assert StripeLinkMinter(client=fc).paid_total("plink_1") is None
 
 
 def test_mint_refuses_live_key_without_connection(monkeypatch):

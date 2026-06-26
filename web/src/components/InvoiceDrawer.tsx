@@ -151,6 +151,9 @@ const Hop = styled.li`
 const Footer = styled.div`
   padding: 16px 24px;
   border-top: 1px solid ${({ theme }) => theme.border};
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 `;
 
 const Approve = styled.button`
@@ -291,9 +294,7 @@ export default function InvoiceDrawer({
                   disabled={approvingId === detail.invoice_id}
                   onClick={() => onApprove(detail.invoice_id)}
                 >
-                  {approvingId === detail.invoice_id
-                    ? "Sending…"
-                    : "Approve & Send"}
+                  {approvingId === detail.invoice_id ? "Sending…" : "Approve & Send"}
                 </Approve>
               </Footer>
             )}

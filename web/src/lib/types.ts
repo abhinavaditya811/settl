@@ -2,6 +2,7 @@
 
 export type TerminalState =
   | "sent"
+  | "recovered"
   | "awaiting_approval"
   | "escalated"
   | "skipped"
@@ -62,6 +63,10 @@ export interface ApproveResponse {
   message: string | null;
 }
 
+export interface CheckPaymentsResponse {
+  recovered: string[]; // invoice ids auto-reconciled to RECOVERED on this poll
+}
+
 export interface ActivityEntry {
   timestamp: string;
   invoice_id: string;
@@ -90,6 +95,7 @@ export interface Metrics {
 // Display metadata for each terminal state - label + which theme color key to use.
 export const STATE_META: Record<TerminalState, { label: string; tone: TerminalState }> = {
   sent: { label: "Sent", tone: "sent" },
+  recovered: { label: "Recovered", tone: "recovered" },
   awaiting_approval: { label: "Awaiting approval", tone: "awaiting_approval" },
   escalated: { label: "Escalated", tone: "escalated" },
   skipped: { label: "Skipped", tone: "skipped" },
@@ -99,6 +105,7 @@ export const STATE_META: Record<TerminalState, { label: string; tone: TerminalSt
 
 export const STATE_ORDER: TerminalState[] = [
   "awaiting_approval",
+  "recovered",
   "sent",
   "escalated",
   "held",

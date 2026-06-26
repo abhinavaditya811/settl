@@ -42,7 +42,8 @@ class StripeLinkMinter:
         self._api_key = api_key or _api_key()
         self._connection_ref = connection_ref  # vendor's connected acct (direct charge)
         self._client = client  # injectable for tests; created lazily otherwise
-        self._cache: dict[str, str] = {}
+        self._cache: dict[str, str] = {}  # invoice_id -> hosted url
+        self._link_ids: dict[str, str] = {}  # invoice_id -> payment link id (for polling)
 
     def _get_client(self):
         if self._client is None:
@@ -83,6 +84,31 @@ class StripeLinkMinter:
                 {**base, "idempotency_key": f"settl-link-{key}"},
             )
             self._cache[invoice.invoice_id] = link.url
+            self._link_ids[invoice.invoice_id] = link.id  # remembered for payment polling
             return link.url
         except Exception:
             return None  # fail-safe: caller falls back to the invoice link / hard-fails
+
+    def link_id(self, invoice_id: str) -> str | None:
+        """The payment link id minted for this invoice (None if not minted)."""
+        return self._link_ids.get(invoice_id)
+
+    def paid_total(self, link_id: str) -> Decimal | None:
+        """Sum of *paid* checkout sessions for a payment link, in the major unit
+        (dollars), or None if nothing is paid / unavailable. This is the Stripe →
+        canonical-event detection the reconcile loop polls. Fail-safe."""
+        if not self._api_key or not link_id:
+            return None
+        opts = {"stripe_account": self._connection_ref} if self._connection_ref else None
+        try:
+            client = self._get_client()
+            sessions = client.v1.checkout.sessions.list(
+                {"payment_link": link_id, "limit": 10}, opts
+            )
+            total = Decimal(0)
+            for s in getattr(sessions, "data", []):
+                if getattr(s, "payment_status", None) == "paid":
+                    total += Decimal(getattr(s, "amount_total", 0) or 0) / 100
+            return total if total > 0 else None
+        except Exception:
+            return None
