@@ -178,12 +178,55 @@ def test_default_orchestrator_drafts_and_sends_a_clean_repeat():
     assert any(step.agent == "drafting" for step in res.steps)
 
 
-# --- live seams are wired-but-deferred (no SDK from memory) --------------------
+# --- Gemini drafting (the visible AI): wired + fail-safe ----------------------
 
 
-def test_live_model_and_grounding_are_unimplemented_seams():
+class _FakeResp:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeModels:
+    def __init__(self, text=None, error=None):
+        self._text, self._error = text, error
+
+    def generate_content(self, **kwargs):
+        if self._error:
+            raise self._error
+        return _FakeResp(self._text)
+
+
+class _FakeClient:
+    def __init__(self, *, text=None, error=None):
+        self.models = _FakeModels(text=text, error=error)
+
+
+def test_grounding_live_seam_is_unimplemented():
+    # Vertex grounding is still a deferred seam; drafting generation is now wired.
+    with pytest.raises(NotImplementedError):
+        VertexSearchGrounding().lookup(_repeat_invoice())
+
+
+def test_gemini_draft_is_failsafe_without_a_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr("settl.agents.drafting.model.load_dotenv", lambda *a, **k: {})
+    prompt = build_prompt(_repeat_invoice(), decide_strategy(_repeat_invoice()))
+    # No key -> never calls out; returns the deterministic fallback.
+    model = GeminiDraftModel(client=_FakeClient(error=AssertionError("must not call")))
+    assert model.generate(prompt) == prompt.safe_fallback()
+
+
+def test_gemini_draft_returns_model_text(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     inv = _repeat_invoice()
-    with pytest.raises(NotImplementedError):
-        GeminiDraftModel().generate(build_prompt(inv, decide_strategy(inv)))
-    with pytest.raises(NotImplementedError):
-        VertexSearchGrounding().lookup(inv)
+    prompt = build_prompt(inv, decide_strategy(inv))
+    text = "Hi Acme LLC, a quick reminder. Settle here: {{payment_link}}. Thanks!"
+    assert GeminiDraftModel(client=_FakeClient(text=text)).generate(prompt) == text
+
+
+def test_gemini_draft_is_failsafe_on_api_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    prompt = build_prompt(_repeat_invoice(), decide_strategy(_repeat_invoice()))
+    model = GeminiDraftModel(client=_FakeClient(error=RuntimeError("boom")))
+    assert model.generate(prompt) == prompt.safe_fallback()

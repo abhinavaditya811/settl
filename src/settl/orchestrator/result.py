@@ -14,6 +14,7 @@ up", one step above the agents' own decisions:
   AWAITING_APPROVAL  clean draft cleared the gate, but it's first contact →
                      one-tap human approval before it can send (pilot-mode HITL)
   SENT               clean draft cleared the gate and went out (mocked for now)
+  RECOVERED          reconcile detected payment in full → loop closed, fee recorded
 """
 
 from __future__ import annotations
@@ -29,12 +30,18 @@ class TerminalState(str, Enum):
     ESCALATED = "escalated"
     AWAITING_APPROVAL = "awaiting_approval"
     SENT = "sent"
+    RECOVERED = "recovered"
 
 
 # States that the unpaid loop should revisit later vs. ones that are final.
 REQUEUE_STATES = frozenset({TerminalState.HELD, TerminalState.SENT})
 TERMINAL_STATES = frozenset(
-    {TerminalState.QUARANTINED, TerminalState.SKIPPED, TerminalState.ESCALATED}
+    {
+        TerminalState.QUARANTINED,
+        TerminalState.SKIPPED,
+        TerminalState.ESCALATED,
+        TerminalState.RECOVERED,
+    }
 )
 
 

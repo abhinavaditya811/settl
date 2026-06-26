@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import {
   approveInvoice,
+  checkPayments,
   getActivity,
   getBoard,
   getMetrics,
@@ -63,6 +64,7 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -99,8 +101,14 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     setLoading(true);
     fetch("/api/health")
       .then((r) => r.json())
-      .then((h) => setLiveSend(Boolean(h.live_send)))
-      .catch(() => setLiveSend(false));
+      .then((h) => {
+        setLiveSend(Boolean(h.live_send));
+        setStripeEnabled(h.payments === "stripe");
+      })
+      .catch(() => {
+        setLiveSend(false);
+        setStripeEnabled(false);
+      });
     loadAll()
       .catch((e) => setError(String((e as Error).message ?? e)))
       .finally(() => setLoading(false));
@@ -133,6 +141,25 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     },
     [loadAll],
   );
+
+  // Auto-detect Stripe payments: poll the engine, which reconciles any paid invoices
+  // on its own. Only runs when the demo board is open and Stripe is armed.
+  useEffect(() => {
+    if (!demoEnabled || !stripeEnabled) return;
+    const tick = async () => {
+      try {
+        const res = await checkPayments();
+        if (res.recovered.length) {
+          await loadAll();
+          setToast({ tone: "ok", text: `Payment detected - ${res.recovered.join(", ")} recovered.` });
+        }
+      } catch {
+        /* polling errors are non-fatal */
+      }
+    };
+    const t = setInterval(tick, 12000);
+    return () => clearInterval(t);
+  }, [demoEnabled, stripeEnabled, loadAll]);
 
   const value: BoardCtx = {
     board,
