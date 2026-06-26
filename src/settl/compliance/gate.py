@@ -24,12 +24,12 @@ from settl.compliance.rules import RuleViolation
 from settl.schema.invoice import Invoice
 
 # Run order is just for readable reasoning; all violations are collected.
+# rule_contact_frequency is run separately (it takes per-tenant policy bounds).
 _INVOICE_RULES = (
     rules.rule_consumer_debt,
     rules.rule_disputed,
     rules.rule_inbound_dispute,
     rules.rule_payment_plan_request,
-    rules.rule_contact_frequency,
     rules.rule_first_contact,
 )
 _MESSAGE_RULES = (
@@ -37,6 +37,7 @@ _MESSAGE_RULES = (
     rules.rule_unenforceable_consequence,
     rules.rule_legal_advice,
     rules.rule_tone_bounds,
+    rules.rule_no_fabricated_link,
 )
 
 
@@ -61,8 +62,17 @@ class ComplianceResult:
 
 
 class ComplianceGate:
-    def __init__(self, log: ExecutionLog | None = None) -> None:
+    def __init__(
+        self,
+        log: ExecutionLog | None = None,
+        *,
+        frequency_window: int | None = None,
+        frequency_max: int | None = None,
+    ) -> None:
         self._log = log
+        # Per-tenant contact-frequency bounds (from policy); None → module defaults.
+        self._frequency_window = frequency_window
+        self._frequency_max = frequency_max
 
     def evaluate(
         self, invoice: Invoice, message: str | None = None
@@ -70,6 +80,11 @@ class ComplianceGate:
         violations: list[RuleViolation] = []
         for rule in _INVOICE_RULES:
             violations.extend(rule(invoice))
+        violations.extend(
+            rules.rule_contact_frequency(
+                invoice, self._frequency_window, self._frequency_max
+            )
+        )
         if message is not None:
             for mrule in _MESSAGE_RULES:
                 violations.extend(mrule(message))

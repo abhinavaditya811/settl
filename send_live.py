@@ -42,6 +42,7 @@ def _self_test_invoice(recipient: str) -> Invoice:
     today = date.today()
     return Invoice(
         invoice_id="LIVE-001",
+        tenant_id="t_selftest",
         source=Source.CSV,
         source_ref="self-test",
         amount_due=Decimal("1450.00"),
@@ -50,9 +51,10 @@ def _self_test_invoice(recipient: str) -> Invoice:
         due_date=today - timedelta(days=15),
         status=InvoiceStatus.OPEN,
         debtor_name="Acme Co (self-test)",
-        debtor_contact=recipient,
+        debtor_email=recipient,
         is_b2b=True,
         late_fee_allowed=True,
+        payment_link="https://buy.stripe.com/test_live_001",  # so the placeholder resolves
         prior_contacts=[],  # first contact → must clear human approval
         as_of_date=today,
         raw={"note": "live self-test invoice - synthetic, addressed to the operator"},

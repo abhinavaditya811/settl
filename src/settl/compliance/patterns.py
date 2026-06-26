@@ -82,6 +82,13 @@ INBOUND_PAYMENT_PLAN = [
     r"\bspread (out )?the payment",
 ]
 
+# A real URL in a draft. The model must never mint one - only the {{payment_link}}
+# placeholder is allowed, resolved by the sender after the gate (non-custodial).
+URL = [
+    r"https?://\S+",
+    r"\bwww\.\S+",
+]
+
 
 def _compile(patterns: list[str]) -> list[re.Pattern]:
     return [re.compile(p, re.IGNORECASE) for p in patterns]
@@ -104,3 +111,4 @@ LEGAL_ADVICE_RE = _compile(LEGAL_ADVICE)
 TONE_BREACH_RE = _compile(TONE_BREACH)
 INBOUND_DISPUTE_RE = _compile(INBOUND_DISPUTE)
 INBOUND_PAYMENT_PLAN_RE = _compile(INBOUND_PAYMENT_PLAN)
+URL_RE = _compile(URL)

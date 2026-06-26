@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Callable
 
 from settl.agents.drafting import DraftedMessage, DraftingAgent, build_prompt
+from settl.agents.drafting.grounding import StaticVoiceGrounding
 from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
@@ -36,6 +37,7 @@ from settl.schema.invoice import Channel, Invoice
 from settl.schema.validation import validate_invoice
 from settl.sending.base import Sender
 from settl.sending.mock_sender import MockSender
+from settl.tenancy.config import TenantConfig
 
 # The gate code that means "clean draft, just needs one-tap human sign-off" rather
 # than a genuine safety problem. Owned by compliance/rules.py - referenced, not redefined.
@@ -65,6 +67,7 @@ class Orchestrator:
         self,
         *,
         log: ExecutionLog | None = None,
+        config: TenantConfig | None = None,
         strategy: StrategyAgent | None = None,
         gate: ComplianceGate | None = None,
         sender: Sender | None = None,
@@ -72,13 +75,59 @@ class Orchestrator:
         draft_fn: Drafter | None = None,
     ) -> None:
         self._log = log
-        self._strategy = strategy or StrategyAgent(log=log)
-        self._gate = gate or ComplianceGate(log=log)
-        self._sender = sender or MockSender(log=log)
+        self._config = config
+        self._strategy = strategy or self._default_strategy(log, config)
+        # When a tenant config is supplied, each default agent is built from its
+        # slice: policy → gate bounds, payments → sender default link, voice →
+        # drafting grounding. An explicitly injected agent always wins. Config can
+        # only tighten the gate; it never bypasses it (SCHEMA.md §3).
+        self._gate = gate or self._default_gate(log, config)
+        self._sender = sender or self._default_sender(log, config)
         # The drafting agent (the visible AI) is the default producer. A bare
         # ``draft_fn`` can still be injected to stand in for it.
-        self._drafter = drafter or DraftingAgent(log=log)
+        self._drafter = drafter or self._default_drafter(log, config)
         self._draft_fn = draft_fn or self._drafter.draft
+
+    @staticmethod
+    def _default_strategy(
+        log: ExecutionLog | None, config: TenantConfig | None
+    ) -> StrategyAgent:
+        if config is None:
+            return StrategyAgent(log=log)
+        return StrategyAgent(
+            log=log,
+            min_days_between_touches=config.policy.min_days_between_touches,
+            allowed_tones=config.policy.allowed_tones,
+        )
+
+    @staticmethod
+    def _default_gate(
+        log: ExecutionLog | None, config: TenantConfig | None
+    ) -> ComplianceGate:
+        if config is None:
+            return ComplianceGate(log=log)
+        return ComplianceGate(
+            log=log,
+            frequency_window=config.policy.frequency_window_days,
+            frequency_max=config.policy.max_touches,
+        )
+
+    @staticmethod
+    def _default_sender(
+        log: ExecutionLog | None, config: TenantConfig | None
+    ) -> Sender:
+        default_link = config.payments.default_payment_link if config else None
+        return MockSender(log=log, default_payment_link=default_link)
+
+    @staticmethod
+    def _default_drafter(
+        log: ExecutionLog | None, config: TenantConfig | None
+    ) -> DraftingAgent:
+        if config is None or not config.voice.voice_block.strip():
+            return DraftingAgent(log=log)
+        return DraftingAgent(
+            log=log, grounding=StaticVoiceGrounding(config.voice.voice_block)
+        )
 
     # -- public API -----------------------------------------------------------
 
@@ -152,11 +201,19 @@ class Orchestrator:
         self._record(invoice, "human_approval", "approved", approved.reasoning)
         steps.append(PipelineStep("human_approval", "approved", approved.reasoning))
         outcome = self._sender.send(invoice, message, approved, channel)
+        if not outcome.sent:
+            # Approved + gate-clear, but the sender withheld (e.g. unresolved link).
+            steps.append(PipelineStep("sender", "withheld", outcome.detail))
+            return PipelineResult(
+                invoice.invoice_id, TerminalState.ESCALATED, steps=steps,
+                message=message, channel=channel.value if channel else None,
+                detail=outcome.detail,
+            )
         steps.append(PipelineStep("sender", "sent", outcome.detail))
         return PipelineResult(
             invoice.invoice_id, TerminalState.SENT, steps=steps,
             message=message, channel=channel.value if channel else None,
-            detail=outcome.detail if outcome.sent else "send failed",
+            detail=outcome.detail,
         )
 
     # -- chase path -----------------------------------------------------------
@@ -196,10 +253,17 @@ class Orchestrator:
             )
 
         outcome = self._sender.send(invoice, message, result, decision.channel)
+        if not outcome.sent:
+            # Gate passed, but the sender withheld (e.g. no resolvable payment link).
+            # Never report SENT for a message that didn't go out - route to a human.
+            steps.append(PipelineStep("sender", "withheld", outcome.detail))
+            return self._finish(
+                invoice, TerminalState.ESCALATED, steps, outcome.detail,
+                message=message, channel=channel,
+            )
         steps.append(PipelineStep("sender", "sent", outcome.detail))
         return self._finish(
-            invoice, TerminalState.SENT, steps,
-            "clean -> sent" if outcome.sent else outcome.detail,
+            invoice, TerminalState.SENT, steps, "clean -> sent",
             message=message, channel=channel,
         )
 

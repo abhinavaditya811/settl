@@ -39,6 +39,7 @@ from settl.schema.invoice import (
 def _invoice(*, late_fee=True, prior=None) -> Invoice:
     return Invoice(
         invoice_id="INV-T1",
+        tenant_id="t_test",
         source=Source.CSV,
         source_ref="CSV-T1",
         amount_due=Decimal("1500.00"),
@@ -47,9 +48,10 @@ def _invoice(*, late_fee=True, prior=None) -> Invoice:
         due_date=date(2026, 6, 1),
         status=InvoiceStatus.OPEN,
         debtor_name="Acme LLC",
-        debtor_contact="ap@acme.co",
+        debtor_email="ap@acme.co",
         is_b2b=True,
         late_fee_allowed=late_fee,
+        payment_link="https://buy.stripe.com/test_inv_t1",
         prior_contacts=prior or [],
         as_of_date=date(2026, 6, 25),  # 24 days overdue → FIRM, late fee applies
     )

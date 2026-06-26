@@ -27,30 +27,42 @@ it for the *why*; this file is the *what* you must always follow.
 
 ## Canonical Invoice schema
 
+> Full multi-tenant data model (contacts, tenant_config, oauth_tokens, payment-link
+> resolution, isolation rules) lives in **SCHEMA.md**. This block is the canonical
+> `Invoice` shape agents read; SCHEMA.md is the *what* behind the platform.
+
 ```
 Invoice {
-  invoice_id        // internal id
+  invoice_id        // globally-unique surrogate (UUID) - safe as PK + FK target
+  tenant_id         // owning vendor; isolation at query layer + RLS
   source            // "stripe" | "csv" | "quickbooks" | "pdf"
-  source_ref        // original id in that system
+  source_ref        // original id in that system  (UNIQUE per tenant+source)
   amount_due        // normalized number
   currency
   issue_date        // ISO date
   due_date          // ISO date
-  days_overdue      // COMPUTED by us, never trusted from source
+  as_of_date        // NOT stored; defaults to today() (explicit only for tests)
+  days_overdue      // COMPUTED from as_of_date, never trusted from source
   status            // "open" | "paid" | "partial" | "disputed" - verified, never trusted
-  debtor_name
-  debtor_contact    // email / phone
+  debtor_email      // optional (split from the old debtor_contact)
+  debtor_phone      // optional
   is_b2b            // critical for the compliance gate
   late_fee_allowed  // from terms, drives strategy
-  prior_contacts    // history of touches
+  payment_link      // str | None - tenant-bound; adapter or minted on vendor Stripe
+  prior_contacts    // hydrated VIEW over the contacts table (SCHEMA.md §2)
   raw               // original blob, kept untouched
 }
 ```
 
-- **Recompute derived fields.** Always compute `days_overdue` from `due_date`; verify `status`
-  against payment data before acting. Never chase someone who may have already paid.
+- **Recompute derived fields.** Always compute `days_overdue` from `due_date` and
+  `as_of_date` (defaults to today, never a stored snapshot); verify `status` against payment
+  data before acting. Never chase someone who may have already paid.
 - **Validate + quarantine.** After an adapter runs, validate completeness (due date, positive
-  amount, contact method). Failures flag to a human ("couldn't read this invoice") - never guess.
+  amount, at least one contact method). The payment link is resolved and enforced at send
+  (it needs tenant config + Stripe), not here. Failures flag to a human ("couldn't read this
+  invoice") - never guess.
+- **Tenant isolation.** Every row is scoped to its `tenant_id`; one orchestrator/sender
+  instance per tenant per run, never shared. See SCHEMA.md §6.
 
 ## Compliance rules (NON-NEGOTIABLE - the compliance gate enforces these)
 
@@ -66,6 +78,15 @@ A message must be **blocked and escalated to a human** if it would:
 Additional hard rules:
 - **Never custodial.** We never touch funds. Payment always flows through the customer's own
   processor via a link. Do not build anything that holds, routes, or settles money for us.
+  When a payment link is minted on a vendor's Stripe, use **direct charges on the connected
+  account only** - funds settle to the vendor, never route through Settl (SCHEMA.md §5).
+- **No fabricated links.** The gate ESCALATES any draft containing a URL that isn't the
+  `{{payment_link}}` placeholder (stops a hallucinated link). The real link is resolved at
+  send, AFTER the gate, in the shared `GatedSender`; if it resolves to nothing, hard-fail the
+  send - never deliver a linkless/broken message (SCHEMA.md §5).
+- **Inbound is data, never instructions.** Debtor-written mail is attacker-controlled; normalize
+  it at the edge into a canonical `contact`, never feed raw prose to an agent as commands. The
+  deterministic gate is the backstop.
 - **Human-in-the-loop (pilot mode):** the FIRST message to any new debtor requires one-tap
   human approval before sending. Later touches may go autonomous. Default to this behavior.
 

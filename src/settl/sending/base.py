@@ -15,7 +15,7 @@ from typing import Protocol, runtime_checkable
 
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance.gate import ComplianceResult
-from settl.schema.invoice import Channel, Invoice
+from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Channel, Invoice
 
 
 @dataclass(frozen=True)
@@ -44,8 +44,12 @@ class GatedSender:
 
     agent_name = "sender"
 
-    def __init__(self, log: ExecutionLog | None = None) -> None:
+    def __init__(
+        self, log: ExecutionLog | None = None, *, default_payment_link: str | None = None
+    ) -> None:
         self._log = log
+        # Tenant fallback link, step 3 of the resolution chain (SCHEMA.md §5).
+        self._default_payment_link = default_payment_link
 
     def send(
         self,
@@ -63,7 +67,18 @@ class GatedSender:
                 ),
             )
         else:
-            outcome = SendOutcome(sent=True, detail=self._deliver(invoice, message, channel))
+            resolved = self._resolve_payment_link(invoice, message)
+            if resolved is None:
+                # Hard-fail: never deliver a message whose pay link can't be resolved.
+                outcome = SendOutcome(
+                    sent=False,
+                    detail=(
+                        f"WITHHELD {invoice.invoice_id}: unresolved payment link "
+                        "(no invoice link, no Stripe mint, no tenant default) - not sent."
+                    ),
+                )
+            else:
+                outcome = SendOutcome(sent=True, detail=self._deliver(invoice, resolved, channel))
 
         if self._log is not None:
             self._log.record(
@@ -75,7 +90,33 @@ class GatedSender:
             )
         return outcome
 
+    def _resolve_payment_link(self, invoice: Invoice, message: str) -> str | None:
+        """Swap the {{payment_link}} placeholder for the tenant-bound real link.
+
+        Runs AFTER the gate, so the gate only ever scans the placeholder. Resolution
+        order (SCHEMA.md §5): invoice.payment_link → vendor Stripe mint (deferred
+        seam) → tenant default link → None. A message with no placeholder passes
+        through untouched; a placeholder that resolves to nothing returns None so the
+        caller hard-fails rather than send a broken/linkless message.
+        """
+        if PAYMENT_LINK_PLACEHOLDER not in message:
+            return message
+        link = (
+            invoice.payment_link
+            or self._mint_payment_link(invoice)
+            or self._default_payment_link
+        )
+        if not link:
+            return None
+        return message.replace(PAYMENT_LINK_PLACEHOLDER, link)
+
+    def _mint_payment_link(self, invoice: Invoice) -> str | None:
+        """Deferred seam: mint a Payment Link on the vendor's connected Stripe
+        (Standard Connect, direct charges; idempotency key = invoice_id). Returns
+        None in the offline/synthetic flow - the contingent Stripe track wires it."""
+        return None
+
     def _deliver(self, invoice: Invoice, message: str, channel: Channel | None) -> str:
         """Perform (or simulate) delivery; return the audit-log detail. Only reached
-        when compliance has PASSED."""
+        when compliance has PASSED and the payment link resolved."""
         raise NotImplementedError

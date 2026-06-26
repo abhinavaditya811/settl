@@ -44,6 +44,14 @@ class ContactDirection(str, Enum):
     INBOUND = "inbound"  # a reply from the debtor
 
 
+# The token a draft carries in place of a real pay link. The sender swaps it for the
+# tenant-bound ``payment_link`` AFTER the compliance gate (so the gate only ever scans
+# the placeholder, never a real URL). Drafting never mints a URL - that would risk
+# routing money through us. Lives here, the lowest-level module, so drafting, sending,
+# and compliance can all import it without a cycle. See SCHEMA.md §5.
+PAYMENT_LINK_PLACEHOLDER = "{{payment_link}}"
+
+
 class PriorContact(BaseModel):
     """One historical touch on this invoice (ours or the debtor's reply)."""
 
@@ -59,6 +67,7 @@ class Invoice(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     invoice_id: str
+    tenant_id: str  # owning vendor; isolation enforced at the query layer + RLS
     source: Source
     source_ref: str
     amount_due: Decimal
@@ -67,15 +76,23 @@ class Invoice(BaseModel):
     due_date: date
     status: InvoiceStatus
     debtor_name: str
-    debtor_contact: str  # email or phone; may be blank → caught by validation
+    # At least one contact method; the matching channel's address is required.
+    # May both be blank → caught by validation/quarantine.
+    debtor_email: str | None = None
+    debtor_phone: str | None = None
     is_b2b: bool
     late_fee_allowed: bool
+    # Tenant-bound pay link from the adapter (or minted on the vendor's Stripe). The
+    # sender resolves the placeholder to this, after the gate; None → resolution
+    # falls through to the tenant default or a hard-fail. See SCHEMA.md §5.
+    payment_link: str | None = None
     prior_contacts: list[PriorContact] = Field(default_factory=list)
     raw: dict = Field(default_factory=dict)
 
-    # Reference date used to compute overdue-ness. The adapter/loader sets this;
-    # source data never gets to assert how overdue an invoice is.
-    as_of_date: date
+    # Reference date used to compute overdue-ness. Defaults to today, so production
+    # never stores or injects it; tests/synthetic pass an explicit date for
+    # reproducibility. Source data never gets to assert how overdue an invoice is.
+    as_of_date: date = Field(default_factory=date.today)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -85,8 +102,13 @@ class Invoice(BaseModel):
 
     @property
     def has_phone(self) -> bool:
-        digits = sum(c.isdigit() for c in self.debtor_contact)
-        return "@" not in self.debtor_contact and digits >= 7
+        return bool(self.debtor_phone and self.debtor_phone.strip())
+
+    def contact_for(self, channel: Channel | None) -> str | None:
+        """Recipient address for a channel: phone for SMS, else email."""
+        if channel is Channel.SMS:
+            return self.debtor_phone
+        return self.debtor_email
 
     @property
     def outbound_contacts(self) -> list[PriorContact]:

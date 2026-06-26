@@ -15,15 +15,25 @@ class StrategyAgent:
         self,
         log: ExecutionLog | None = None,
         model: JudgmentModel | None = None,
+        *,
+        min_days_between_touches: int | None = None,
+        allowed_tones: tuple[str, ...] | None = None,
     ) -> None:
         self._log = log
         # Every model - real or no-op - is wrapped in the safety clamp, so its
         # output can only refine tone/timing/late-fee on a chase and can never
         # change the action or bypass the gate. The clamp is not optional.
         self._model = ClampedModel(model or NoOpModel())
+        # Per-tenant policy inputs (from TenantConfig.policy); None → module defaults.
+        self._min_days_between_touches = min_days_between_touches
+        self._allowed_tones = allowed_tones
 
     def decide(self, invoice: Invoice) -> StrategyDecision:
-        decision = decide_strategy(invoice)
+        decision = decide_strategy(
+            invoice,
+            min_days_between_touches=self._min_days_between_touches,
+            allowed_tones=self._allowed_tones,
+        )
         decision = self._model.refine(invoice, decision)
 
         if self._log is not None:

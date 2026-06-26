@@ -72,8 +72,44 @@ def _days_since_last_outbound(invoice: Invoice) -> int | None:
     return invoice.as_of_date.toordinal() - last.toordinal()
 
 
-def decide_strategy(invoice: Invoice) -> StrategyDecision:
-    """Pure policy: Invoice → StrategyDecision (no side effects, no model call)."""
+_TONE_ORDER = (Tone.FRIENDLY, Tone.FIRM, Tone.FINAL)
+_ASK = {
+    Tone.FRIENDLY: "gentle nudge with the payment link",
+    Tone.FIRM: "clear request for payment with the link",
+    Tone.FINAL: "firm final-notice request before next steps",
+}
+
+
+def _clamp_tone(tone: Tone, allowed_tones: tuple[str, ...] | None) -> Tone:
+    """Clamp the computed tone to a tenant's allowed set (policy input). A tenant can
+    only *soften* - forbid FINAL → downgrade to the strongest allowed tone at or below
+    it; it can never escalate beyond what the policy computed."""
+    if not allowed_tones:
+        return tone
+    allowed = set(allowed_tones)
+    if tone.value in allowed:
+        return tone
+    idx = _TONE_ORDER.index(tone)
+    for t in reversed(_TONE_ORDER[: idx + 1]):  # strongest allowed at or below
+        if t.value in allowed:
+            return t
+    for t in _TONE_ORDER:  # else the least severe allowed
+        if t.value in allowed:
+            return t
+    return tone  # allowed set empty → no clamp
+
+
+def decide_strategy(
+    invoice: Invoice,
+    *,
+    min_days_between_touches: int | None = None,
+    allowed_tones: tuple[str, ...] | None = None,
+) -> StrategyDecision:
+    """Pure policy: Invoice → StrategyDecision (no side effects, no model call).
+
+    ``min_days_between_touches`` and ``allowed_tones`` are per-tenant policy inputs;
+    both default to the module thresholds / no clamp so an un-configured call is
+    unchanged."""
     factors = {
         "days_overdue": invoice.days_overdue,
         "status": invoice.status.value,
@@ -112,12 +148,13 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
         )
 
     # 5. Contact-frequency / cooldown: actionable, but not right now.
+    cooldown = TOO_SOON_DAYS if min_days_between_touches is None else min_days_between_touches
     days_since = _days_since_last_outbound(invoice)
-    if days_since is not None and days_since < TOO_SOON_DAYS:
+    if days_since is not None and days_since < cooldown:
         return StrategyDecision(
             Action.HOLD,
             f"Last touch was {days_since}d ago - too soon to re-contact.",
-            next_touch_in_days=TOO_SOON_DAYS - days_since,
+            next_touch_in_days=cooldown - days_since,
             factors=factors,
         )
     if len(_recent_outbound(invoice)) >= RECENT_TOUCH_LIMIT:
@@ -129,14 +166,17 @@ def decide_strategy(invoice: Invoice) -> StrategyDecision:
             factors=factors,
         )
 
-    # 6. Healthy chase - pick tone/late-fee by how overdue it is.
+    # 6. Healthy chase - pick tone/late-fee by how overdue it is, then clamp the tone
+    # to the tenant's allowed set (a tenant can only soften, never escalate).
     days = invoice.days_overdue
     if days <= FRIENDLY_MAX_DAYS:
-        tone, ask = Tone.FRIENDLY, "gentle nudge with the payment link"
+        tone = Tone.FRIENDLY
     elif days <= FIRM_MAX_DAYS:
-        tone, ask = Tone.FIRM, "clear request for payment with the link"
+        tone = Tone.FIRM
     else:
-        tone, ask = Tone.FINAL, "firm final-notice request before next steps"
+        tone = Tone.FINAL
+    tone = _clamp_tone(tone, allowed_tones)
+    ask = _ASK[tone]
 
     include_fee = invoice.late_fee_allowed and days >= LATE_FEE_MIN_DAYS
     reasoning = (
