@@ -109,6 +109,7 @@ def health() -> dict:
         "status": "ok",
         "live_send": state.live_send_enabled,
         "drafting": "gemini" if state.gemini_enabled else "template",
+        "payments": "stripe" if state.stripe_enabled else "none",
     }
 
 

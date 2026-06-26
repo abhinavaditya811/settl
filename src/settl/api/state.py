@@ -40,6 +40,7 @@ class BoardState:
         # the test inbox) when explicitly armed, mock otherwise.
         sender = self._make_sender()
         drafter = self._make_drafter()
+        self._minter = self._make_minter()
         self._board = Orchestrator(log=self._log, sender=sender, drafter=drafter)
         self._approver = Orchestrator(log=self._log, sender=sender)
         self._invoices: dict[str, Invoice] = {}
@@ -82,11 +83,34 @@ class BoardState:
         has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
         return armed and has_key
 
+    def _make_minter(self):
+        """A Stripe link minter when armed (SETTL_USE_STRIPE=1 + a key), else None. Off
+        by default so the board never creates Stripe objects just because a key exists."""
+        from settl.payments import StripeLinkMinter, stripe_enabled
+
+        return StripeLinkMinter() if stripe_enabled() else None
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return self._minter is not None
+
+    def _enrich_payment_links(self, invoices: list[Invoice]) -> list[Invoice]:
+        """For the demo, mint a real (test-mode) Stripe link per invoice so the board,
+        drawer, and email all carry a payable link. Minting is cached per invoice and
+        fail-safe (an invoice keeps its existing link if minting returns None)."""
+        if self._minter is None:
+            return invoices
+        out: list[Invoice] = []
+        for inv in invoices:
+            url = self._minter.mint(inv)
+            out.append(inv.model_copy(update={"payment_link": url}) if url else inv)
+        return out
+
     # -- queries --------------------------------------------------------------
 
     def refresh(self) -> None:
         self._log.clear()  # fresh run → don't double-count the activity feed
-        invoices = load_synthetic_invoices()
+        invoices = self._enrich_payment_links(load_synthetic_invoices())
         self._invoices = {inv.invoice_id: inv for inv in invoices}
         self._results = {r.invoice_id: r for r in self._board.run_batch(invoices)}
 
