@@ -1,8 +1,9 @@
-"""Strategy agent: wraps the deterministic policy, applies the (no-op for now)
-judgment model, and logs every decision with its reasoning."""
+"""Strategy agent: wraps the deterministic policy, applies the judgment model
+(behind a mandatory safety clamp), and logs every decision with its reasoning."""
 
 from __future__ import annotations
 
+from settl.agents.strategy.bounds import ClampedModel
 from settl.agents.strategy.model import JudgmentModel, NoOpModel
 from settl.agents.strategy.policy import StrategyDecision, decide_strategy
 from settl.audit.execution_log import ExecutionLog
@@ -19,7 +20,10 @@ class StrategyAgent:
         allowed_tones: tuple[str, ...] | None = None,
     ) -> None:
         self._log = log
-        self._model = model or NoOpModel()
+        # Every model - real or no-op - is wrapped in the safety clamp, so its
+        # output can only refine tone/timing/late-fee on a chase and can never
+        # change the action or bypass the gate. The clamp is not optional.
+        self._model = ClampedModel(model or NoOpModel())
         # Per-tenant policy inputs (from TenantConfig.policy); None → module defaults.
         self._min_days_between_touches = min_days_between_touches
         self._allowed_tones = allowed_tones
