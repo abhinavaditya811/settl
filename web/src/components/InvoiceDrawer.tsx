@@ -99,6 +99,12 @@ const Message = styled.div`
   line-height: 1.6;
 `;
 
+const PayLink = styled.a`
+  word-break: break-all;
+  color: ${({ theme }) => theme.accent};
+  text-decoration: underline;
+`;
+
 const Timeline = styled.ol`
   list-style: none;
   margin: 0;
@@ -171,6 +177,21 @@ const Muted = styled.p`
   font-size: 13.5px;
 `;
 
+// Render the message body, turning the resolved payment URL into a clickable link.
+function renderBody(text: string, url: string | null) {
+  if (!url || !text.includes(url)) return text;
+  return text.split(url).map((part, i, arr) => (
+    <span key={i}>
+      {part}
+      {i < arr.length - 1 && (
+        <PayLink href={url} target="_blank" rel="noopener noreferrer">
+          {url}
+        </PayLink>
+      )}
+    </span>
+  ));
+}
+
 interface Props {
   invoiceId: string;
   approvingId: string | null;
@@ -240,10 +261,12 @@ export default function InvoiceDrawer({
               </div>
             </Head>
             <Body>
-              {detail.message ? (
+              {detail.message_preview ? (
                 <>
                   <Label>Drafted message</Label>
-                  <Message>{detail.message}</Message>
+                  <Message>
+                    {renderBody(detail.message_preview, detail.payment_link)}
+                  </Message>
                 </>
               ) : (
                 <Muted>No message was drafted for this invoice.</Muted>

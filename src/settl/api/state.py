@@ -39,7 +39,8 @@ class BoardState:
         # One sender drives both the board batch and approvals: live (redirected to
         # the test inbox) when explicitly armed, mock otherwise.
         sender = self._make_sender()
-        self._board = Orchestrator(log=self._log, sender=sender)
+        drafter = self._make_drafter()
+        self._board = Orchestrator(log=self._log, sender=sender, drafter=drafter)
         self._approver = Orchestrator(log=self._log, sender=sender)
         self._invoices: dict[str, Invoice] = {}
         self._results: dict[str, PipelineResult] = {}
@@ -58,9 +59,28 @@ class BoardState:
                 return sender
         return MockSender(log=self._log)
 
+    def _make_drafter(self):
+        """Real Gemini drafting (the visible AI) when a key is configured; the offline
+        template otherwise. Drafting only affects the board batch - approvals re-gate a
+        provided message and never re-draft."""
+        from settl.agents.drafting import DraftingAgent
+        from settl.agents.drafting.model import GeminiDraftModel
+
+        if self.gemini_enabled:
+            return DraftingAgent(log=self._log, model=GeminiDraftModel())
+        return DraftingAgent(log=self._log)
+
     @property
     def live_send_enabled(self) -> bool:
         return isinstance(self._board._sender, GmailSmtpSender)
+
+    @property
+    def gemini_enabled(self) -> bool:
+        """Real Gemini drafting is opt-in (SETTL_USE_GEMINI=1) *and* needs a key, so the
+        default board run - and the test suite - stays offline and deterministic."""
+        armed = os.environ.get("SETTL_USE_GEMINI") == "1"
+        has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        return armed and has_key
 
     # -- queries --------------------------------------------------------------
 

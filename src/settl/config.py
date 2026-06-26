@@ -15,6 +15,17 @@ from pathlib import Path
 
 _DEFAULT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
+# Default Gemini model id shared by every LLM agent (strategy judgment, drafting).
+# The plain "gemini-3-pro" id does not exist; the real current id is the preview one.
+# Free-tier keys often lack quota for it (429) - set GEMINI_MODEL to a free-tier model
+# (e.g. gemini-2.5-flash) to override. The agents are fail-safe either way.
+DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
+
+
+def gemini_model_name(override: str | None = None) -> str:
+    """Resolve the model id: explicit override → GEMINI_MODEL env → shared default."""
+    return override or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+
 
 def load_dotenv(path: str | Path | None = None) -> dict[str, str]:
     """Load KEY=VALUE pairs from ``path`` (default: repo-root ``.env``).

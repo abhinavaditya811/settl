@@ -39,7 +39,7 @@ from settl.api.schemas import (
 from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
-from settl.schema.invoice import Invoice
+from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
 
 # Where the execution-log JSONL is written. Defaults to the repo's runs/ dir for
 # local dev; override with SETTL_RUNS_DIR on hosts with a read-only or
@@ -77,6 +77,7 @@ def _card(inv: Invoice, res: PipelineResult) -> InvoiceCard:
         status=inv.status.value,
         is_b2b=inv.is_b2b,
         channel=res.channel,
+        payment_link=inv.payment_link,
         terminal_state=res.terminal_state.value,
         detail=res.detail,
         needs_human=res.needs_human,
@@ -85,9 +86,16 @@ def _card(inv: Invoice, res: PipelineResult) -> InvoiceCard:
 
 
 def _detail(inv: Invoice, res: PipelineResult) -> InvoiceDetail:
+    # Read-only preview with the placeholder resolved to the real link, so the UI can
+    # show (and click) the link inline. The editable `message` keeps the placeholder -
+    # the gate re-checks it on approve and would escalate a raw URL (FABRICATED_LINK).
+    preview = res.message
+    if res.message and inv.payment_link:
+        preview = res.message.replace(PAYMENT_LINK_PLACEHOLDER, inv.payment_link)
     return InvoiceDetail(
         **_card(inv, res).model_dump(),
         message=res.message,
+        message_preview=preview,
         steps=[StepView(agent=s.agent, decision=s.decision, reasoning=s.reasoning) for s in res.steps],
     )
 
@@ -97,7 +105,11 @@ def _detail(inv: Invoice, res: PipelineResult) -> InvoiceDetail:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "live_send": state.live_send_enabled}
+    return {
+        "status": "ok",
+        "live_send": state.live_send_enabled,
+        "drafting": "gemini" if state.gemini_enabled else "template",
+    }
 
 
 @app.get("/invoices", response_model=BoardResponse)

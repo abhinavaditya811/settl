@@ -16,9 +16,11 @@ escalated downstream, by design.
 
 from __future__ import annotations
 
+import os
 from typing import Protocol, runtime_checkable
 
 from settl.agents.drafting.prompt import DraftPrompt
+from settl.config import gemini_model_name, load_dotenv
 
 
 @runtime_checkable
@@ -45,23 +47,39 @@ class NoOpDraftModel:
 
 
 class GeminiDraftModel:
-    """🔌 Live Gemini 3 Pro generation. Skeleton only.
+    """🔌 Live Gemini generation for the drafting agent (the visible AI).
 
-    Implement ``generate`` against current official ADK/Vertex/Gemini docs
-    (context7) once GCP is configured: feed ``prompt.as_model_input()`` to Gemini 3
-    Pro and return the message body. The compliance gate remains the sole authority
-    over what may send — never relax a gate rule to accommodate model output.
+    Feeds ``prompt.as_model_input()`` - which already carries the full instructions
+    and compliance guardrails - to Gemini and returns the message body. Mirrors the
+    strategy ``GeminiJudgmentModel``: lazy SDK client, key read from the env, and
+    **fail-safe** (a missing key, missing SDK, or any API error falls back to the
+    deterministic template, so the pipeline never breaks). The compliance gate remains
+    the sole authority over what may send.
     """
 
     name = "gemini-3-pro"
 
-    def __init__(self, *, model_name: str = "gemini-3-pro", client=None) -> None:
-        self._model_name = model_name
-        self._client = client
+    def __init__(self, *, model_name: str | None = None, client=None) -> None:
+        load_dotenv()  # surface a .env-provided key to the SDK
+        self._model_name = gemini_model_name(model_name)
+        self._client = client  # injectable for tests; created lazily otherwise
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai  # lazy import: the SDK is an optional extra
+
+            self._client = genai.Client()  # reads GEMINI_API_KEY / GOOGLE_API_KEY
+        return self._client
 
     def generate(self, prompt: DraftPrompt) -> str:
-        raise NotImplementedError(
-            "GeminiDraftModel is a seam: wire the real Gemini 3 Pro call against "
-            "current official docs (context7) once GCP is configured. Use "
-            "prompt.as_model_input() as the request and return only the message body."
-        )
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            return prompt.safe_fallback()  # no key -> deterministic, never call out
+        try:
+            response = self._get_client().models.generate_content(
+                model=self._model_name,
+                contents=prompt.as_model_input(),  # instructions + guardrails baked in
+                config={"temperature": 0.6},
+            )
+            return (getattr(response, "text", "") or "").strip() or prompt.safe_fallback()
+        except Exception:
+            return prompt.safe_fallback()  # fail-safe: never break the pipeline

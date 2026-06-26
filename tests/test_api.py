@@ -17,6 +17,18 @@ def test_health():
     body = r.json()
     assert body["status"] == "ok"
     assert "live_send" in body
+    assert body["drafting"] in ("gemini", "template")  # which drafter is active
+
+
+def test_detail_surfaces_payment_link():
+    r = client.get("/invoices/INV-018")  # stripe source → carries a pay link, gets sent
+    assert r.status_code == 200
+    body = r.json()
+    assert "stripe.com" in (body["payment_link"] or "")
+    # The editable draft keeps the placeholder; the read-only preview resolves it.
+    assert "{{payment_link}}" in body["message"]
+    assert "{{payment_link}}" not in body["message_preview"]
+    assert body["payment_link"] in body["message_preview"]
 
 
 def test_board_lists_all_invoices_with_summary():

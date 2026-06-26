@@ -17,6 +17,7 @@ export interface InvoiceCard {
   status: string; // open | paid | partial | disputed
   is_b2b: boolean;
   channel: string | null;
+  payment_link: string | null;
   terminal_state: TerminalState;
   detail: string;
   needs_human: boolean;
@@ -31,6 +32,7 @@ export interface StepView {
 
 export interface InvoiceDetail extends InvoiceCard {
   message: string | null;
+  message_preview: string | null; // message with {{payment_link}} resolved (read-only)
   steps: StepView[];
 }
 

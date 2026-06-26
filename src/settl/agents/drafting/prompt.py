@@ -49,7 +49,8 @@ _GUARDRAILS = (
     "(credit reporting, seizing assets, etc.).",
     "- Never give legal advice or assert what the recipient is legally obligated to do.",
     "- Do not insult, shame, or harass. Stay strictly within the requested tone.",
-    "- Do not invent a payment URL; refer to the secure payment link placeholder only.",
+    "- Never write a real URL. Include the exact token {{payment_link}} once, verbatim, "
+    "where the payment link belongs - the sending layer swaps it for the real link.",
 )
 
 
