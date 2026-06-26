@@ -1,0 +1,38 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "t_brightwork",
+      "identity": {
+        "business_name": "Brightwork Studios",
+        "from_address": "ar@brightwork.example",
+        "oauth_token_ref": "tok_brightwork"
+      },
+      "payments": {
+        "default_payment_link": "https://buy.stripe.com/test_brightwork_default",
+        "stripe_connection_ref": "acct_brightwork"
+      },
+      "voice": {
+        "voice_block": "Warm and concise; assume good faith. Sign off as 'The Brightwork team'.",
+        "signature": "The Brightwork team"
+      },
+      "policy": {}
+    },
+    {
+      "tenant_id": "t_harborside",
+      "identity": {
+        "business_name": "Harborside Recovery",
+        "from_address": "billing@harborside.example",
+        "oauth_token_ref": "tok_harborside"
+      },
+      "payments": {
+        "default_payment_link": "https://buy.stripe.com/test_harborside_default",
+        "stripe_connection_ref": "acct_harborside"
+      },
+      "voice": {
+        "voice_block": "Direct and professional; no chit-chat. Sign off as 'Harborside AR'.",
+        "signature": "Harborside AR"
+      },
+      "policy": {"max_touches": 2, "min_days_between_touches": 3}
+    }
+  ]
+}

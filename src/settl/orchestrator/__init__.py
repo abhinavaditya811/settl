@@ -9,6 +9,7 @@ from settl.orchestrator.result import (
     TerminalState,
 )
 from settl.orchestrator.runtime import NoOpRuntime, OrchestratorRuntime
+from settl.orchestrator.tenanted import run_multitenant
 
 __all__ = [
     "LoopDecision",
@@ -20,4 +21,5 @@ __all__ = [
     "TerminalState",
     "default_draft",
     "next_touch",
+    "run_multitenant",
 ]

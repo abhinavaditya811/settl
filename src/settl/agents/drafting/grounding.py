@@ -55,6 +55,22 @@ class NoOpGrounding:
         return VoiceContext()
 
 
+class StaticVoiceGrounding:
+    """Grounding from a tenant's configured voice (no retrieval, offline).
+
+    Carries the vendor's ``voice.voice_block`` (and optional tone hint) from their
+    ``TenantConfig`` into the draft prompt - the simplest way per-tenant voice flows
+    through, until ``VertexSearchGrounding`` does real retrieval."""
+
+    def __init__(self, voice_block: str = "", tone_hint: str | None = None) -> None:
+        self._voice_block = voice_block
+        self._tone_hint = tone_hint
+
+    def lookup(self, invoice: Invoice) -> VoiceContext:
+        snippets = [self._voice_block] if self._voice_block.strip() else []
+        return VoiceContext(snippets=snippets, tone_hint=self._tone_hint)
+
+
 class VertexSearchGrounding:
     """🔌 Live Vertex AI Search grounding. Skeleton only.
 
