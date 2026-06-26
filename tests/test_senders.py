@@ -22,15 +22,16 @@ BLOCK = ComplianceResult(
 )
 
 
-def _invoice(contact="ap@acme.test", b2b=True, prior=None):
+def _invoice(contact="ap@acme.test", b2b=True, prior=None,
+             payment_link="https://buy.stripe.com/test_t1"):
     today = date.today()
     return Invoice(
-        invoice_id="T-1", source=Source.CSV, source_ref="x",
+        invoice_id="T-1", tenant_id="t_test", source=Source.CSV, source_ref="x",
         amount_due=Decimal("100.00"), currency="USD",
         issue_date=today - timedelta(days=40), due_date=today - timedelta(days=10),
-        status=InvoiceStatus.OPEN, debtor_name="Acme", debtor_contact=contact,
+        status=InvoiceStatus.OPEN, debtor_name="Acme", debtor_email=contact,
         is_b2b=b2b, late_fee_allowed=True, prior_contacts=prior or [],
-        as_of_date=today,
+        payment_link=payment_link, as_of_date=today,
     )
 
 
@@ -45,6 +46,33 @@ def test_mock_sender_refuses_on_escalate():
 def test_mock_sender_sends_on_pass():
     out = MockSender().send(_invoice(), "hi", PASS, Channel.EMAIL)
     assert out.sent is True and "would send" in out.detail
+
+
+# --- payment-link resolution (SCHEMA.md §5) ----------------------------------
+
+
+def test_sender_substitutes_payment_link_after_gate():
+    inv = _invoice(payment_link="https://buy.stripe.com/test_xyz")
+    out = MockSender().send(inv, "Pay here: {{payment_link}}", PASS, Channel.EMAIL)
+    assert out.sent is True
+    assert "https://buy.stripe.com/test_xyz" in out.detail
+    assert "{{payment_link}}" not in out.detail  # placeholder must be gone
+
+
+def test_sender_hard_fails_when_link_unresolvable():
+    inv = _invoice(payment_link=None)  # no invoice link, no mint, no tenant default
+    out = MockSender().send(inv, "Pay here: {{payment_link}}", PASS, Channel.EMAIL)
+    assert out.sent is False
+    assert "unresolved payment link" in out.detail
+
+
+def test_sender_falls_back_to_tenant_default_link():
+    inv = _invoice(payment_link=None)
+    out = MockSender(default_payment_link="https://buy.stripe.com/test_default").send(
+        inv, "Pay here: {{payment_link}}", PASS, Channel.EMAIL
+    )
+    assert out.sent is True
+    assert "test_default" in out.detail
 
 
 def test_gmail_sender_refuses_on_escalate_without_touching_smtp(monkeypatch):

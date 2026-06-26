@@ -82,6 +82,21 @@ def test_legal_advice_is_blocked():
     assert "LEGAL_ADVICE" in ComplianceGate().evaluate(inv, msg).codes
 
 
+def test_fabricated_url_is_blocked():
+    # The model must never mint a URL - the sender resolves the real link after the gate.
+    inv = _by_id()["INV-018"]
+    msg = "Hi - please pay at https://not-our-processor.example/pay now. Thanks!"
+    result = ComplianceGate().evaluate(inv, msg)
+    assert result.decision is GateDecision.ESCALATE
+    assert "FABRICATED_LINK" in result.codes
+
+
+def test_placeholder_link_is_allowed():
+    inv = _by_id()["INV-018"]
+    msg = "Hi - you can settle here: {{payment_link}}. Thanks!"
+    assert "FABRICATED_LINK" not in ComplianceGate().evaluate(inv, msg).codes
+
+
 # --- the gate must also let a legitimate message through ----------------------
 
 

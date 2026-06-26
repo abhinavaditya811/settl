@@ -130,6 +130,12 @@ that translate into one **canonical Invoice schema**; agents only ever read that
 
 ### Canonical Invoice schema
 
+> ⚠️ The block below is the original single-tenant shape. The **revised multi-tenant
+> model** (surrogate `invoice_id` + `tenant_id`, injected `as_of_date`, split
+> `debtor_email`/`debtor_phone`, `payment_link`, the `contacts` / `tenant_config` /
+> `oauth_tokens` tables, and the payment-link resolution chain) lives in **SCHEMA.md** -
+> read it for the current target shape. This section is kept for the original reasoning.
+
 ```
 Invoice {
   invoice_id        // internal id

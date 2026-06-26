@@ -44,4 +44,4 @@ def test_malformed_invoice_is_quarantined():
     # The reasons name the bad fields, never a guess.
     issues = next(iss for inv, iss in quarantined if inv.invoice_id == "INV-011")
     fields = {i.field for i in issues}
-    assert {"amount_due", "debtor_contact"} <= fields
+    assert {"amount_due", "contact"} <= fields

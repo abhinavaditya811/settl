@@ -17,4 +17,5 @@ __all__ = ["MockSender", "SendOutcome", "Sender"]
 class MockSender(GatedSender):
     def _deliver(self, invoice: Invoice, message: str, channel: Channel | None) -> str:
         via = channel.value if channel else "email"
-        return f"would send: to={invoice.debtor_contact} via={via} :: {message}"
+        to = invoice.contact_for(channel) or invoice.debtor_email or invoice.debtor_phone
+        return f"would send: to={to} via={via} :: {message}"

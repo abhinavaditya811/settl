@@ -26,11 +26,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from settl.agents.strategy.policy import StrategyDecision, Tone
-from settl.schema.invoice import Invoice
+from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
 
-# Placeholder the sending layer swaps for the customer's own processor link.
-# Drafting never mints a URL — that would risk routing money through us.
-PAYMENT_LINK_PLACEHOLDER = "{{payment_link}}"
+# PAYMENT_LINK_PLACEHOLDER (the token the sending layer swaps for the customer's own
+# processor link) now lives in schema.invoice so drafting, sending, and compliance
+# share one definition. Re-exported here for callers that import it from prompt.
+__all__ = ["DraftPrompt", "build_prompt", "PAYMENT_LINK_PLACEHOLDER"]
 
 # Human-readable framing per tone, kept here so the prompt reads as one story.
 _TONE_BRIEF = {

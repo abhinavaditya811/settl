@@ -64,7 +64,7 @@ class GmailSmtpSender(GatedSender):
             raise MissingCredentials(
                 "Set SETTL_SMTP_USER and SETTL_SMTP_APP_PASSWORD to send email."
             )
-        recipient = self._force_recipient or invoice.debtor_contact
+        recipient = self._force_recipient or invoice.contact_for(channel) or invoice.debtor_email
 
         email = EmailMessage()
         email["From"] = self._user
@@ -76,7 +76,8 @@ class GmailSmtpSender(GatedSender):
             smtp.login(self._user, self._password)
             smtp.send_message(email)
 
-        redirected = " (redirected from %s)" % invoice.debtor_contact if (
-            self._force_recipient and self._force_recipient != invoice.debtor_contact
+        original = invoice.contact_for(channel) or invoice.debtor_email
+        redirected = " (redirected from %s)" % original if (
+            self._force_recipient and self._force_recipient != original
         ) else ""
         return f"emailed {invoice.invoice_id} to {recipient}{redirected} via Gmail SMTP"

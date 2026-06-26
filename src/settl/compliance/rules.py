@@ -17,7 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from settl.compliance import patterns as P
-from settl.schema.invoice import ContactDirection, Invoice, InvoiceStatus
+from settl.schema.invoice import (
+    PAYMENT_LINK_PLACEHOLDER,
+    ContactDirection,
+    Invoice,
+    InvoiceStatus,
+)
 
 # Contact-frequency bound (hard rule). >= MAX touches in WINDOW days → block.
 FREQUENCY_WINDOW_DAYS = 7
@@ -89,16 +94,24 @@ def rule_payment_plan_request(invoice: Invoice) -> list[RuleViolation]:
     return []
 
 
-def rule_contact_frequency(invoice: Invoice) -> list[RuleViolation]:
-    cutoff = invoice.as_of_date.toordinal() - FREQUENCY_WINDOW_DAYS
+def rule_contact_frequency(
+    invoice: Invoice,
+    window_days: int | None = None,
+    max_touches: int | None = None,
+) -> list[RuleViolation]:
+    """Contact-frequency bound. Bounds default to the module constants but a tenant's
+    ``policy`` (max_touches / frequency_window_days) can tighten them via the gate."""
+    window_days = FREQUENCY_WINDOW_DAYS if window_days is None else window_days
+    max_touches = FREQUENCY_MAX_TOUCHES if max_touches is None else max_touches
+    cutoff = invoice.as_of_date.toordinal() - window_days
     recent = [
         c for c in invoice.outbound_contacts if c.occurred_on.toordinal() >= cutoff
     ]
-    if len(recent) >= FREQUENCY_MAX_TOUCHES:
+    if len(recent) >= max_touches:
         return [
             RuleViolation(
                 "FREQUENCY_LIMIT",
-                f"{len(recent)} outbound touches in the last {FREQUENCY_WINDOW_DAYS} "
+                f"{len(recent)} outbound touches in the last {window_days} "
                 "days - exceeds contact-frequency limit; escalate.",
             )
         ]
@@ -165,6 +178,23 @@ def rule_tone_bounds(message: str) -> list[RuleViolation]:
             RuleViolation(
                 "TONE_BREACH",
                 f"Message breaches tone bounds ({', '.join(hits)}).",
+            )
+        ]
+    return []
+
+
+def rule_no_fabricated_link(message: str) -> list[RuleViolation]:
+    """Non-custodial guard: a draft may carry only the {{payment_link}} placeholder,
+    never a real URL. The sender resolves the tenant-bound link after the gate; any
+    other URL means the model fabricated one - escalate. See SCHEMA.md §5."""
+    cleaned = message.replace(PAYMENT_LINK_PLACEHOLDER, "")
+    hits = P.matches(cleaned, P.URL_RE)
+    if hits:
+        return [
+            RuleViolation(
+                "FABRICATED_LINK",
+                f"Message contains a non-placeholder URL ({', '.join(hits)}) - only "
+                "{{payment_link}} is allowed; the sender resolves the real link.",
             )
         ]
     return []
