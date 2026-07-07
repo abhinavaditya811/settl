@@ -51,13 +51,31 @@ class OperatorNotifier:
                 recovered_amount=str(fee.recovered_amount),
                 fee_amount=str(fee.fee_amount),
             )
+        self._email(f"[Settl] Recovered - {invoice.invoice_id}", summary)
+        return summary
+
+    def notify_escalation(self, invoice: Invoice, reason: str) -> str:
+        """Record (and optionally email) an escalation notice: a dispute, an inbound
+        reply, or a data anomaly reconcile could not act on safely. Operator-facing,
+        same non-gated path as ``notify_paid`` - this is not debtor outreach."""
+        summary = f"{invoice.invoice_id} ({invoice.debtor_name}) needs review - {reason}"
+        if self._log is not None:
+            self._log.record(
+                invoice_id=invoice.invoice_id,
+                agent="reconcile_notify",
+                decision="operator_escalated",
+                reasoning=summary,
+            )
+        self._email(f"[Settl] Needs review - {invoice.invoice_id}", summary)
+        return summary
+
+    def _email(self, subject: str, body: str) -> None:
         fn = self._email_fn or _default_email_fn()
         if fn is not None:
             try:
-                fn(_recipient(), f"[Settl] Recovered - {invoice.invoice_id}", summary)
+                fn(_recipient(), subject, body)
             except Exception:
                 pass  # the notification email is best-effort; the log entry is the record
-        return summary
 
 
 def _recipient() -> str | None:
