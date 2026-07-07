@@ -32,6 +32,7 @@ from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
 from settl.compliance.gate import ComplianceResult, GateDecision
+from settl.governance import RuleStore
 from settl.orchestrator.result import PipelineResult, PipelineStep, TerminalState
 from settl.schema.invoice import Channel, Invoice
 from settl.schema.validation import validate_invoice
@@ -73,15 +74,19 @@ class Orchestrator:
         sender: Sender | None = None,
         drafter: DraftingAgent | None = None,
         draft_fn: Drafter | None = None,
+        rules_store: RuleStore | None = None,
     ) -> None:
         self._log = log
         self._config = config
-        self._strategy = strategy or self._default_strategy(log, config)
+        # Operator guardrails (human-in-the-loop). Threaded into the default strategy +
+        # gate below, the same way TenantConfig is. Can only tighten / soft-waive.
+        self._rules_store = rules_store
+        self._strategy = strategy or self._default_strategy(log, config, rules_store)
         # When a tenant config is supplied, each default agent is built from its
         # slice: policy → gate bounds, payments → sender default link, voice →
         # drafting grounding. An explicitly injected agent always wins. Config can
         # only tighten the gate; it never bypasses it (SCHEMA.md §3).
-        self._gate = gate or self._default_gate(log, config)
+        self._gate = gate or self._default_gate(log, config, rules_store)
         self._sender = sender or self._default_sender(log, config)
         # The drafting agent (the visible AI) is the default producer. A bare
         # ``draft_fn`` can still be injected to stand in for it.
@@ -90,26 +95,32 @@ class Orchestrator:
 
     @staticmethod
     def _default_strategy(
-        log: ExecutionLog | None, config: TenantConfig | None
+        log: ExecutionLog | None,
+        config: TenantConfig | None,
+        rules_store: RuleStore | None = None,
     ) -> StrategyAgent:
         if config is None:
-            return StrategyAgent(log=log)
+            return StrategyAgent(log=log, rules_store=rules_store)
         return StrategyAgent(
             log=log,
             min_days_between_touches=config.policy.min_days_between_touches,
             allowed_tones=config.policy.allowed_tones,
+            rules_store=rules_store,
         )
 
     @staticmethod
     def _default_gate(
-        log: ExecutionLog | None, config: TenantConfig | None
+        log: ExecutionLog | None,
+        config: TenantConfig | None,
+        rules_store: RuleStore | None = None,
     ) -> ComplianceGate:
         if config is None:
-            return ComplianceGate(log=log)
+            return ComplianceGate(log=log, rules_store=rules_store)
         return ComplianceGate(
             log=log,
             frequency_window=config.policy.frequency_window_days,
             frequency_max=config.policy.max_touches,
+            rules_store=rules_store,
         )
 
     @staticmethod

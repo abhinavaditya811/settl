@@ -11,6 +11,10 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /invoices/{id}             one invoice: card + draft + pipeline steps
     GET  /invoices/{id}/trace       the audit-log timeline for one invoice
     POST /invoices/{id}/approve     approve a held draft (optional edited message)
+    POST /invoices/{id}/flag        flag a decision → guardrail + re-orchestrate
+    GET  /guardrails                the stored operator guardrails
+    POST /check-payments            poll Stripe + auto-reconcile paid links
+    POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
     POST /refresh                   re-run the board over the dataset
 
 CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
@@ -21,7 +25,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from settl.api.schemas import (
@@ -31,11 +35,15 @@ from settl.api.schemas import (
     BoardResponse,
     BoardSummary,
     CheckPaymentsResponse,
+    FlagRequest,
+    FlagResponse,
+    GuardrailView,
     InvoiceCard,
     InvoiceDetail,
     Metrics,
     StepView,
     TraceEntry,
+    WebhookAck,
 )
 from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
@@ -176,12 +184,48 @@ def approve(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse
     )
 
 
+@app.post("/invoices/{invoice_id}/flag", response_model=FlagResponse)
+def flag(invoice_id: str, body: FlagRequest) -> FlagResponse:
+    """Operator flags a decision: store a guardrail + re-orchestrate this invoice. The
+    engine decides the outcome (and refuses waiving a non-waivable rule); this route only
+    projects the result - no compliance/strategy logic lives here."""
+    out = state.flag_decision(
+        invoice_id,
+        scope=body.scope,
+        directive=body.directive,
+        waive_code=body.waive_code,
+        reason=body.reason,
+        criteria=body.criteria,
+    )
+    if out is None:
+        raise HTTPException(404, f"unknown invoice {invoice_id}")
+    return FlagResponse(**out)
+
+
+@app.get("/guardrails", response_model=list[GuardrailView])
+def guardrails() -> list[GuardrailView]:
+    return [GuardrailView(**g) for g in state.guardrails()]
+
+
 @app.post("/check-payments", response_model=CheckPaymentsResponse)
 def check_payments() -> CheckPaymentsResponse:
     """Poll Stripe for paid links and auto-reconcile (record fee, notify, RECOVERED).
     No-op when Stripe isn't armed. The dashboard polls this so payment reflects on
     its own - no manual marking."""
     return CheckPaymentsResponse(recovered=state.check_payments())
+
+
+@app.post("/stripe/webhook", response_model=WebhookAck)
+async def stripe_webhook(request: Request) -> WebhookAck:
+    """Stripe → server payment/refund/dispute events. Verified against the signing
+    secret, then handed to the engine to re-reconcile - so the board updates with no
+    dashboard tab open. Thin projector: correlation + reconcile live in BoardState; this
+    only passes the raw body + signature through and always 2xx's once verified (Stripe
+    retries on non-2xx). The signature is what makes the untrusted body safe to act on."""
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    changed = state.ingest_webhook(payload, sig)
+    return WebhookAck(received=True, changed=changed)
 
 
 @app.post("/refresh", response_model=BoardResponse)

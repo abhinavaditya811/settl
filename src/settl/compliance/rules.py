@@ -28,6 +28,17 @@ from settl.schema.invoice import (
 FREQUENCY_WINDOW_DAYS = 7
 FREQUENCY_MAX_TOUCHES = 3
 
+# Code emitted when an operator guardrail forces escalation (a *tightening* override).
+OPERATOR_GUARDRAIL = "OPERATOR_GUARDRAIL"
+
+# The ONLY codes an operator may waive. These are operational/pilot rules, not legal
+# ones: a human can accept a firmer contact cadence or clear a first-contact hold. Every
+# other code (consumer-debt/FDCPA, dispute, legal threat/advice, unenforceable claim,
+# fabricated link) is a hard safety rule and can NEVER be waived - a flag against one is
+# recorded and stays escalated. This is what keeps "a tenant can only make the gate
+# stricter, never bypass it" (SCHEMA.md §3) true even with human overrides.
+WAIVABLE_CODES = frozenset({"FIRST_CONTACT_APPROVAL", "FREQUENCY_LIMIT"})
+
 
 @dataclass(frozen=True)
 class RuleViolation:

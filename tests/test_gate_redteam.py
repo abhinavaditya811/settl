@@ -67,3 +67,47 @@ def test_one_message_can_trip_several_rules_and_all_are_recorded():
     result = ComplianceGate().evaluate(_clean_invoice(), msg)
     assert result.decision is GateDecision.ESCALATE
     assert {"LEGAL_ADVICE", "LEGAL_THREAT", "UNENFORCEABLE_CONSEQUENCE"} <= set(result.codes)
+
+
+# --- operator guardrails: catching what the base patterns miss ----------------
+
+
+def test_near_miss_slips_the_base_gate_then_a_guardrail_catches_it():
+    """Forced failure: a passive-aggressive message the pattern rules DON'T catch slips
+    through as PASS. Once an operator flags it, an ALWAYS_ESCALATE guardrail on that
+    debtor makes every similar future case escalate - human-in-the-loop closes the gap."""
+    from settl.governance import Directive, OperatorRule, RuleStore, Scope
+
+    inv = _clean_invoice()
+    # No legal threat / overclaim / tone keyword - the base gate lets it through.
+    near_miss = (
+        "We've noticed you keep letting this slide. Sort it out with the link "
+        "{{payment_link}} before it becomes a problem for you."
+    )
+    assert ComplianceGate().evaluate(inv, near_miss).decision is GateDecision.PASS
+
+    store = RuleStore()
+    store.add(OperatorRule(
+        scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE,
+        criteria={"debtor_name": inv.debtor_name}, reason="passive-aggressive tone the gate missed",
+    ))
+    caught = ComplianceGate(rules_store=store).evaluate(inv, near_miss)
+    assert caught.decision is GateDecision.ESCALATE
+    assert "OPERATOR_GUARDRAIL" in caught.codes
+
+
+def test_a_human_flag_can_never_waive_a_legal_threat():
+    """The hard safety line, end to end: even with a WAIVE guardrail for LEGAL_THREAT,
+    a message containing a legal threat still escalates."""
+    from settl.governance import Directive, OperatorRule, RuleStore, Scope
+
+    store = RuleStore()
+    store.add(OperatorRule(
+        scope=Scope.COMPLIANCE, directive=Directive.WAIVE, waive_code="LEGAL_THREAT",
+        criteria={"debtor_name": _clean_invoice().debtor_name},
+    ))
+    result = ComplianceGate(rules_store=store).evaluate(
+        _clean_invoice(), "Pay now or we will sue you."
+    )
+    assert result.decision is GateDecision.ESCALATE
+    assert "LEGAL_THREAT" in result.codes

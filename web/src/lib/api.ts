@@ -7,6 +7,9 @@ import type {
   ApproveResponse,
   BoardResponse,
   CheckPaymentsResponse,
+  FlagRequest,
+  FlagResponse,
+  GuardrailView,
   InvoiceDetail,
   Metrics,
   TraceEntry,
@@ -54,3 +57,15 @@ export const approveInvoice = (id: string, message?: string) =>
 // Poll the engine for Stripe payments; it auto-reconciles any that were paid.
 export const checkPayments = () =>
   getJSON<CheckPaymentsResponse>("/api/check-payments", { method: "POST" });
+
+// Flag a decision: the engine stores a guardrail and re-orchestrates this invoice.
+// The engine decides the outcome (and refuses waiving a non-waivable rule).
+export const flagDecision = (id: string, body: FlagRequest) =>
+  getJSON<FlagResponse>(`/api/invoices/${id}/flag`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+// The stored operator guardrails (active human-in-the-loop rules).
+export const getGuardrails = () => getJSON<GuardrailView[]>("/api/guardrails");

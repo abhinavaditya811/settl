@@ -21,6 +21,7 @@ from enum import Enum
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import rules
 from settl.compliance.rules import RuleViolation
+from settl.governance import RuleStore, guardrail_violations, waived_codes
 from settl.schema.invoice import Invoice
 
 # Run order is just for readable reasoning; all violations are collected.
@@ -68,11 +69,16 @@ class ComplianceGate:
         *,
         frequency_window: int | None = None,
         frequency_max: int | None = None,
+        rules_store: RuleStore | None = None,
     ) -> None:
         self._log = log
         # Per-tenant contact-frequency bounds (from policy); None → module defaults.
         self._frequency_window = frequency_window
         self._frequency_max = frequency_max
+        # Operator guardrails (human-in-the-loop feedback). They can only make the gate
+        # STRICTER (add escalation) or waive a SOFT rule; a legal/consumer/dispute code
+        # can never be waived (enforced in governance.waived_codes). Gate stays authority.
+        self._rules_store = rules_store
 
     def evaluate(
         self, invoice: Invoice, message: str | None = None
@@ -88,6 +94,13 @@ class ComplianceGate:
         if message is not None:
             for mrule in _MESSAGE_RULES:
                 violations.extend(mrule(message))
+
+        # Operator guardrails: add any tightening escalations, then drop soft-rule
+        # violations the operator explicitly waived (hard codes are never in the set).
+        violations.extend(guardrail_violations(invoice, self._rules_store))
+        waived = waived_codes(invoice, self._rules_store)
+        if waived:
+            violations = [v for v in violations if v.code not in waived]
 
         if violations:
             decision = GateDecision.ESCALATE
@@ -107,5 +120,6 @@ class ComplianceGate:
                 reasoning=reasoning,
                 violation_codes=result.codes,
                 message_checked=message is not None,
+                waived_codes=sorted(waived),
             )
         return result

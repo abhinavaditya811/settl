@@ -67,6 +67,42 @@ export interface CheckPaymentsResponse {
   recovered: string[]; // invoice ids auto-reconciled to RECOVERED on this poll
 }
 
+// Human-in-the-loop: flag a decision → guardrail + re-orchestrate.
+export type FlagScope = "strategy" | "compliance";
+export type FlagDirective =
+  | "always_escalate"
+  | "force_skip"
+  | "force_hold"
+  | "soften_tone"
+  | "waive";
+
+export interface FlagRequest {
+  scope: FlagScope;
+  directive: FlagDirective;
+  waive_code?: string | null; // for directive=waive (soft codes only)
+  reason?: string;
+  criteria?: Record<string, unknown> | null;
+}
+
+export interface FlagResponse {
+  invoice_id: string;
+  terminal_state: TerminalState;
+  detail: string;
+  rule_id: string;
+  applied: boolean; // false if refused (e.g. waiving a non-waivable rule)
+  note: string;
+}
+
+export interface GuardrailView {
+  rule_id: string;
+  scope: FlagScope;
+  directive: FlagDirective;
+  criteria: Record<string, unknown>;
+  waive_code: string | null;
+  reason: string;
+  created_at: string;
+}
+
 export interface ActivityEntry {
   timestamp: string;
   invoice_id: string;

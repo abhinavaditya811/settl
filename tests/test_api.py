@@ -51,13 +51,75 @@ def test_check_payments_auto_reconciles_a_paid_link():
         def link_id(self, iid):
             return f"plink_{iid}" if iid == target else None
 
-        def paid_total(self, link_id):
-            return Decimal("1000000")  # >= any invoice amount → PAID
+        def paid_sessions(self, link_id, currency="usd"):
+            return [("pi_test", Decimal("1000000"))]  # >= any invoice amount → PAID
 
     board._minter = _FakeMinter()
     assert board.check_payments() == [target]
     assert board._results[target].terminal_state is TerminalState.RECOVERED
     assert board.check_payments() == []  # idempotent: already recovered
+
+
+def _sent_target(board):
+    from settl.orchestrator import TerminalState
+    for iid, r in board._results.items():
+        if r.terminal_state is TerminalState.SENT and board._invoices[iid].currency == "USD":
+            return iid
+    raise AssertionError("no USD SENT invoice in the synthetic set")
+
+
+def _stub_verify(monkeypatch, event):
+    """Skip signature crypto: feed a raw event straight into the real parse_event path."""
+    from settl.api import state as state_mod
+    monkeypatch.setattr(state_mod, "verify_event", lambda payload, sig, secret: event)
+
+
+def test_webhook_recovers_an_invoice_with_no_tab_open(monkeypatch):
+    from decimal import Decimal
+
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = _sent_target(board)
+    minor = int(Decimal(board._invoices[target].amount_due) * 100)
+    _stub_verify(monkeypatch, {"type": "checkout.session.completed", "data": {"object": {
+        "payment_status": "paid", "amount_total": minor, "currency": "usd",
+        "payment_intent": "pi_wh", "metadata": {"settl_invoice_id": target},
+    }}})
+
+    changed = board.ingest_webhook(b"{}", "sig")
+    assert changed == [target]
+    assert board._results[target].terminal_state is TerminalState.RECOVERED
+    # Idempotent: replaying the same event changes nothing (deduped by reference).
+    assert board.ingest_webhook(b"{}", "sig") == []
+
+
+def test_webhook_dispute_escalates(monkeypatch):
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = _sent_target(board)
+    _stub_verify(monkeypatch, {"type": "charge.dispute.created", "data": {"object": {
+        "amount": 12000, "currency": "usd", "id": "dp_1",
+        "metadata": {"settl_invoice_id": target},
+    }}})
+
+    changed = board.ingest_webhook(b"{}", "sig")
+    assert changed == [target]
+    assert board._results[target].terminal_state is TerminalState.ESCALATED
+
+
+def test_webhook_unresolved_event_is_a_safe_noop(monkeypatch):
+    from settl.api.state import BoardState
+
+    board = BoardState()
+    _stub_verify(monkeypatch, {"type": "checkout.session.completed", "data": {"object": {
+        "payment_status": "paid", "amount_total": 100, "currency": "usd",
+        "payment_intent": "pi_unknown",  # no metadata, no known link → uncorrelatable
+    }}})
+    assert board.ingest_webhook(b"{}", "sig") == []
 
 
 def test_board_lists_all_invoices_with_summary():
@@ -157,3 +219,61 @@ def test_editable_approve_rejects_an_edited_message_that_breaks_a_rule():
     assert r.status_code == 200
     body = r.json()
     assert body["sent"] is False and body["terminal_state"] == "escalated"
+
+
+# --- flag → guardrail → re-orchestrate --------------------------------------
+
+
+def test_flag_strategy_force_skip_reorchestrates_to_skipped():
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = _sent_target(board)
+    out = board.flag_decision(
+        target, scope="strategy", directive="force_skip", reason="never chase this debtor",
+    )
+    assert out["applied"] is True and out["rule_id"]
+    assert board._results[target].terminal_state is TerminalState.SKIPPED
+    assert len(board.guardrails()) == 1
+
+
+def test_flag_always_escalate_reorchestrates_to_escalated():
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = _sent_target(board)
+    out = board.flag_decision(
+        target, scope="compliance", directive="always_escalate", reason="review these",
+    )
+    assert out["applied"] is True
+    assert board._results[target].terminal_state is TerminalState.ESCALATED
+
+
+def test_flag_waiving_a_legal_code_is_refused():
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    # INV-003 is consumer (non-B2B) → escalated on B2B_ONLY.
+    assert board._results["INV-003"].terminal_state is TerminalState.ESCALATED
+    out = board.flag_decision(
+        "INV-003", scope="compliance", directive="waive", waive_code="B2B_ONLY",
+        reason="operator thinks it's fine",
+    )
+    assert out["applied"] is False and "not waivable" in out["note"]
+    # Still escalated - a legal/consumer rule can never be waived.
+    assert board._results["INV-003"].terminal_state is TerminalState.ESCALATED
+    assert board.guardrails() == []  # nothing stored for a refused waiver
+
+
+def test_flag_unknown_invoice_is_404():
+    r = client.post("/invoices/NOPE/flag", json={"scope": "compliance", "directive": "always_escalate"})
+    assert r.status_code == 404
+
+
+def test_guardrails_route_returns_a_list():
+    r = client.get("/guardrails")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)

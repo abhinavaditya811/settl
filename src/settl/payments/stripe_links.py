@@ -21,6 +21,7 @@ import os
 from decimal import Decimal
 
 from settl.config import load_dotenv
+from settl.payments.currency import from_minor_units, to_minor_units
 from settl.schema.invoice import Invoice
 
 
@@ -72,7 +73,8 @@ class StripeLinkMinter:
             price = client.v1.prices.create(
                 {
                     "currency": invoice.currency.lower(),
-                    "unit_amount": int(amount * 100),  # smallest currency unit (cents)
+                    # Smallest currency unit - correct for zero-decimal currencies too.
+                    "unit_amount": to_minor_units(amount, invoice.currency),
                     "product_data": {
                         "name": f"Invoice {invoice.invoice_id} - {invoice.debtor_name}"
                     },
@@ -80,7 +82,15 @@ class StripeLinkMinter:
                 {**base, "idempotency_key": f"settl-price-{key}"},
             )
             link = client.v1.payment_links.create(
-                {"line_items": [{"price": price.id, "quantity": 1}]},
+                {
+                    "line_items": [{"price": price.id, "quantity": 1}],
+                    # Correlation tags so a webhook can route the payment/refund/dispute
+                    # back to this invoice (SCHEMA.md §7).
+                    "metadata": {
+                        "settl_invoice_id": invoice.invoice_id,
+                        "settl_tenant_id": invoice.tenant_id,
+                    },
+                },
                 {**base, "idempotency_key": f"settl-link-{key}"},
             )
             self._cache[invoice.invoice_id] = link.url
@@ -93,22 +103,41 @@ class StripeLinkMinter:
         """The payment link id minted for this invoice (None if not minted)."""
         return self._link_ids.get(invoice_id)
 
-    def paid_total(self, link_id: str) -> Decimal | None:
-        """Sum of *paid* checkout sessions for a payment link, in the major unit
-        (dollars), or None if nothing is paid / unavailable. This is the Stripe →
-        canonical-event detection the reconcile loop polls. Fail-safe."""
+    def paid_sessions(self, link_id: str, currency: str = "usd") -> list[tuple[str, Decimal]]:
+        """Every *paid* checkout session for a link as ``(reference, amount)`` in the
+        major unit. ``reference`` is the session's payment_intent (falling back to the
+        session id) - the SAME key a webhook uses - so the poll and the webhook never
+        double-count the same payment. Paginated (no fixed cap); currency-correct;
+        fail-safe (returns [] on any error)."""
         if not self._api_key or not link_id:
-            return None
+            return []
         opts = {"stripe_account": self._connection_ref} if self._connection_ref else None
         try:
             client = self._get_client()
-            sessions = client.v1.checkout.sessions.list(
-                {"payment_link": link_id, "limit": 10}, opts
+            page = client.v1.checkout.sessions.list(
+                {"payment_link": link_id, "limit": 100}, opts
             )
-            total = Decimal(0)
-            for s in getattr(sessions, "data", []):
-                if getattr(s, "payment_status", None) == "paid":
-                    total += Decimal(getattr(s, "amount_total", 0) or 0) / 100
-            return total if total > 0 else None
+            out: list[tuple[str, Decimal]] = []
+            for s in self._iter_all(page):
+                if getattr(s, "payment_status", None) != "paid":
+                    continue
+                ref = getattr(s, "payment_intent", None) or getattr(s, "id", "") or link_id
+                out.append((str(ref), from_minor_units(getattr(s, "amount_total", 0), currency)))
+            return out
         except Exception:
-            return None
+            return []
+
+    def paid_total(self, link_id: str, currency: str = "usd") -> Decimal | None:
+        """Net paid across all sessions for a link, in the major unit, or None if
+        nothing is paid / unavailable. Thin sum over :meth:`paid_sessions`."""
+        total = sum((amt for _, amt in self.paid_sessions(link_id, currency)), Decimal(0))
+        return total if total > 0 else None
+
+    @staticmethod
+    def _iter_all(page):
+        """Iterate every item across all pages: prefer the SDK's auto-pager, else fall
+        back to the single page's ``.data`` (keeps the fake test client working)."""
+        auto = getattr(page, "auto_paging_iter", None)
+        if callable(auto):
+            return auto()
+        return getattr(page, "data", [])

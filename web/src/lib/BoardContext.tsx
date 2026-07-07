@@ -15,13 +15,18 @@ import type {
   ActivityEntry,
   ApproveResponse,
   BoardResponse,
+  FlagRequest,
+  FlagResponse,
+  GuardrailView,
   Metrics,
 } from "./types";
 import {
   approveInvoice,
   checkPayments,
+  flagDecision,
   getActivity,
   getBoard,
+  getGuardrails,
   getMetrics,
   refreshBoard,
 } from "./api";
@@ -36,14 +41,17 @@ interface BoardCtx {
   board: BoardResponse | null;
   metrics: Metrics | null;
   activity: ActivityEntry[];
+  guardrails: GuardrailView[];
   liveSend: boolean;
   loading: boolean;
   error: string | null;
   approvingId: string | null;
+  flaggingId: string | null;
   refreshing: boolean;
   toast: Toast | null;
   refresh: (hard?: boolean) => Promise<void>;
   approve: (id: string, message?: string) => Promise<ApproveResponse | null>;
+  flag: (id: string, body: FlagRequest) => Promise<FlagResponse | null>;
   notify: (t: Toast) => void;
 }
 
@@ -60,19 +68,27 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
   const [board, setBoard] = useState<BoardResponse | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [guardrails, setGuardrails] = useState<GuardrailView[]>([]);
   const [liveSend, setLiveSend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [stripeEnabled, setStripeEnabled] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
 
   const loadAll = useCallback(async () => {
-    const [b, m, a] = await Promise.all([getBoard(), getMetrics(), getActivity()]);
+    const [b, m, a, g] = await Promise.all([
+      getBoard(),
+      getMetrics(),
+      getActivity(),
+      getGuardrails(),
+    ]);
     setBoard(b);
     setMetrics(m);
     setActivity(a);
+    setGuardrails(g);
     setError(null);
   }, []);
 
@@ -142,6 +158,28 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     [loadAll],
   );
 
+  const flag = useCallback(
+    async (id: string, body: FlagRequest) => {
+      setFlaggingId(id);
+      try {
+        const res = await flagDecision(id, body);
+        await loadAll();
+        setToast(
+          res.applied
+            ? { tone: "ok", text: `${id} flagged - guardrail ${res.rule_id} applied.` }
+            : { tone: "err", text: `${id}: ${res.note}` },
+        );
+        return res;
+      } catch (e) {
+        setToast({ tone: "err", text: `${id}: ${String((e as Error).message)}` });
+        return null;
+      } finally {
+        setFlaggingId(null);
+      }
+    },
+    [loadAll],
+  );
+
   // Auto-detect Stripe payments: poll the engine, which reconciles any paid invoices
   // on its own. Only runs when the demo board is open and Stripe is armed.
   useEffect(() => {
@@ -165,14 +203,17 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     board,
     metrics,
     activity,
+    guardrails,
     liveSend,
     loading,
     error,
     approvingId,
+    flaggingId,
     refreshing,
     toast,
     refresh,
     approve,
+    flag,
     notify: setToast,
   };
 

@@ -76,6 +76,40 @@ class CheckPaymentsResponse(BaseModel):
     recovered: list[str]  # invoice ids auto-reconciled to RECOVERED on this poll
 
 
+class WebhookAck(BaseModel):
+    received: bool  # always true once the signature verified (Stripe wants a fast 2xx)
+    changed: list[str] = []  # invoice ids whose board state moved on this event
+
+
+class FlagRequest(BaseModel):
+    """An operator flags a decision → a durable guardrail + re-orchestration."""
+
+    scope: str  # "strategy" | "compliance"
+    directive: str  # always_escalate | force_skip | force_hold | soften_tone | waive
+    waive_code: str | None = None  # for directive=waive (soft codes only)
+    reason: str = ""
+    criteria: dict | None = None  # attribute match; defaults to this invoice's attrs
+
+
+class FlagResponse(BaseModel):
+    invoice_id: str
+    terminal_state: str  # the re-orchestrated outcome
+    detail: str
+    rule_id: str  # the stored guardrail's id
+    applied: bool  # False if the flag was rejected (e.g. waiving a non-waivable code)
+    note: str = ""
+
+
+class GuardrailView(BaseModel):
+    rule_id: str
+    scope: str
+    directive: str
+    criteria: dict
+    waive_code: str | None = None
+    reason: str = ""
+    created_at: str = ""
+
+
 class ActivityEntry(BaseModel):
     timestamp: str
     invoice_id: str
