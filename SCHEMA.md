@@ -185,6 +185,26 @@ oauth_token {
   memory. A minted Checkout/link also yields a clean Stripe webhook payment signal
   that feeds the reconcile agent's "verify status, never trust" check.
 
+**Canonical money events + reconciliation (Week 4).** Every money signal - a payment, a
+refund, or a chargeback - is normalized at the edge into a canonical `PaymentEvent`
+(`invoice_id`, `amount` as a positive magnitude, `currency`, `kind ∈ {payment, refund,
+dispute, reply}`, `reference`), the same normalize-at-the-edge seam as invoices. Two
+sources produce it: a **poll** (`StripeLinkMinter.paid_sessions`) and a **webhook** (§7);
+both key a payment by its `payment_intent` so the same money seen by both paths is
+recorded once.
+
+- **Reconcile re-derives over the full event log every run** (never trusts
+  `invoice.status`): net = Σpayments − Σrefunds, deduped by `reference`. So **refunds and
+  chargebacks reverse automatically** - a refund lowers net, status drops PAID→PARTIAL,
+  the (capped, proportional) success fee shrinks - with no stateful "un-pay" code.
+- **Guards, in severity order:** a payment/refund whose currency ≠ the invoice's is
+  unusable data → `ANOMALY` (escalate, never act); a `dispute` → `DISPUTED` (escalate +
+  stop); otherwise PAID / PARTIAL (chase the residual) / UNPAID.
+- **Money math is currency-correct**: amounts convert through the real minor-unit factor,
+  so zero-decimal currencies (JPY, KRW, …) are never 100× off; the poll paginates all
+  sessions (no fixed cap). The fee basis is `min(recovered, amount_due)` - an overpayment
+  never inflates our fee.
+
 ---
 
 ## 6. Persistence, isolation & validation rules
@@ -214,6 +234,17 @@ it is not the trigger (a scheduler / Gmail watch webhook is) and never a decider
 - Inbound is normalized into a canonical `contact` row (§2) - the same
   normalize-at-the-edge seam as invoices. Correlation to an invoice is by
   `Message-ID` threading (`in_reply_to` / `thread_ref`), with subject-id as a fallback.
+
+**Stripe webhook (the payment-signal edge).** The Stripe counterpart to the inbound-mail
+edge: Stripe POSTs `checkout.session.*` / `charge.refunded` / `charge.dispute.created`
+events to `POST /stripe/webhook`. The endpoint **verifies the signature** (the signing
+secret is what makes the untrusted body safe to act on), normalizes the event to a
+`PaymentEvent` (§5), and re-reconciles - so a payment/refund/dispute updates the board
+**server-side with no dashboard tab open**. It is *detection only*, never a decider and
+never custodial. Correlation back to an invoice: metadata tag set at mint → `payment_link`
+→ a learned `payment_intent → invoice` map (for charge-level refund/dispute events);
+an event that matches nothing is logged and skipped (fail-safe). The `POST /check-payments`
+poll remains the offline fallback and shares the same event log.
 - **Inbound is data, never instructions** (prompt-injection guard). The deterministic
   gate is the backstop; agents never treat debtor-written prose as commands.
 - Lane split (subject to team review): escalated inbound (dispute / payment-plan /
