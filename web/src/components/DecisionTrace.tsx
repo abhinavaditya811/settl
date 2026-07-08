@@ -7,7 +7,7 @@
 
 import styled from "styled-components";
 import type { TraceEntry } from "@/lib/types";
-import { humanizeDetails } from "@/lib/reasoning";
+import { humanizeDetails, cleanReasoning, friendlyAgent } from "@/lib/reasoning";
 
 const Timeline = styled.ol`
   list-style: none;
@@ -37,12 +37,6 @@ const Hop = styled.li`
   .agent {
     font-weight: 700;
     font-size: 13.5px;
-  }
-  .decision {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px;
-    color: ${({ theme }) => theme.textMuted};
-    margin-left: 8px;
   }
   .why {
     font-size: 13px;
@@ -109,13 +103,12 @@ export default function DecisionTrace({ trace }: { trace: TraceEntry[] }) {
         return (
           <Hop key={i}>
             <div>
-              <span className="agent">{e.agent}</span>
-              <span className="decision">{e.decision}</span>
+              <span className="agent">{friendlyAgent(e.agent)}</span>
               {e.timestamp && (
                 <span className="time">{new Date(e.timestamp).toLocaleTimeString()}</span>
               )}
             </div>
-            <div className="why">{e.reasoning}</div>
+            <div className="why">{cleanReasoning(e.reasoning)}</div>
             {pairs.length > 0 && (
               <HopDetails>
                 <summary>Why — full reasoning</summary>

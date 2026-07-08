@@ -70,9 +70,9 @@ export default function GuardrailsPanel() {
             </span>
             <span className="rule">{g.rule_id}</span>
           </div>
-          <div className="crit">
+          {/* <div className="crit">
             {g.scope} · applies to {criteria(g)}
-          </div>
+          </div> */}
           {g.reason && <div className="reason">{g.reason}</div>}
         </Item>
       ))}

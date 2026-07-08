@@ -105,7 +105,8 @@ class ComplianceGate:
         if violations:
             decision = GateDecision.ESCALATE
             reasoning = "Escalated to human: " + "; ".join(
-                f"[{v.code}] {v.message}" for v in violations
+                # f"[{v.code}] {v.message}" for v in violations
+                f"{v.message}" for v in violations
             )
         else:
             decision = GateDecision.PASS

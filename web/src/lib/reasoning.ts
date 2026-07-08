@@ -3,6 +3,44 @@
 // The engine logs structured facts (factors, violation codes, tone, flags); this is the
 // presentation layer that phrases them for a human. Pure + unit-testable.
 
+// Which step of the engine ran → what it's doing, in a business owner's words.
+const AGENT_LABELS: Record<string, string> = {
+  strategy: "Deciding what to do",
+  strategy_judgment: "Double-checking the plan",
+  drafting: "Writing the message",
+  compliance_gate: "Compliance check",
+  sender: "Sending",
+  email_sender: "Sending by email",
+  sms_sender: "Sending by text",
+  reconcile: "Checking for payment",
+  reconcile_notify: "Keeping you posted",
+  operator_flag: "Your feedback",
+  webhook: "Payment update",
+};
+
+// The outcome each step reached → plain English, no internal codes.
+const DECISION_LABELS: Record<string, string> = {
+  chase: "Ready to send a reminder",
+  skip: "Nothing to do",
+  hold: "Waiting for the right time",
+  review: "Needs your review",
+  pass: "Cleared to send",
+  escalate: "Sent to you for approval",
+  drafted: "Message written",
+  refined: "Plan fine-tuned",
+  skipped: "Kept the original plan",
+  sent: "Message sent",
+  withheld: "Held back, not sent",
+  operator_notified: "You were notified",
+  operator_escalated: "Escalated to you",
+  waiver_refused: "Waiver declined",
+  guardrail_stored: "Your guardrail saved",
+  unresolved: "Couldn't match this payment",
+  paid: "Paid in full",
+  partial: "Partially paid",
+  unpaid: "Still unpaid",
+};
+
 // Compliance rule codes → what they mean in business terms.
 const CODE_LABELS: Record<string, string> = {
   B2B_ONLY: "Consumer debt — outside our scope",
@@ -77,6 +115,22 @@ function criteria(obj: Record<string, unknown>): string {
     .map(([k, v]) => `${CRITERION_LABELS[k] ?? titleCase(k)} = ${String(v)}`)
     .join(", ");
 }
+
+/**
+ * Strip the engine's `[CODE]` audit prefixes from a reasoning sentence so a
+ * business owner reads plain English. The gate logs "[B2B_ONLY] Consumer debt…"
+ * for the audit trail; the message after the code is already human-readable.
+ */
+export const cleanReasoning = (reasoning: string) =>
+  reasoning.replace(/\[[A-Z0-9_]+\]\s*/g, "").trim();
+
+/** The engine step name (e.g. "compliance_gate") → what a business owner reads. */
+export const friendlyAgent = (agent: string) =>
+  AGENT_LABELS[agent] ?? titleCase(agent);
+
+/** The step's outcome code (e.g. "escalate") → plain English. */
+export const friendlyDecision = (decision: string) =>
+  DECISION_LABELS[decision] ?? titleCase(decision);
 
 /** Turn a trace entry's `details` into readable (label, value) pairs for display. */
 export function humanizeDetails(details: Record<string, unknown>): [string, string][] {
