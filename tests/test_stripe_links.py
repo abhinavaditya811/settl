@@ -120,6 +120,46 @@ def test_paid_total_none_when_nothing_paid(monkeypatch):
     assert StripeLinkMinter(client=fc).paid_total("plink_1") is None
 
 
+# --- money math: zero-decimal currencies + pagination -------------------------
+
+
+def test_mint_zero_decimal_currency_does_not_multiply_by_100(monkeypatch):
+    # JPY has no minor unit: 5000 yen must be sent as 5000, not 500000.
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _FakeClient()
+    StripeLinkMinter(client=fc).mint(_inv(amount="5000", currency="JPY"))
+    assert fc.calls[0][1]["unit_amount"] == 5000  # whole yen, not 500000
+
+
+def test_paid_total_reads_zero_decimal_currency_as_whole_units(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _CheckoutClient([_Sess("paid", 5000)])  # 5000 yen
+    assert StripeLinkMinter(client=fc).paid_total("plink_1", "jpy") == Decimal("5000")
+
+
+class _PagedSessList:
+    """A list result that only pages via auto_paging_iter (no .data), like the SDK."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def auto_paging_iter(self):
+        return iter(self._data)
+
+
+def test_paid_total_paginates_past_the_old_10_session_cap(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    # 25 paid sessions of $1 each - the old limit=10/no-pagination would undercount.
+    sessions = [_Sess("paid", 100) for _ in range(25)]
+
+    class _PagedCheckout:
+        def __init__(self, data):
+            res = type("R", (), {"list": lambda self, p, o=None: _PagedSessList(data)})()
+            self.v1 = type("V1", (), {"checkout": type("C", (), {"sessions": res})()})()
+
+    assert StripeLinkMinter(client=_PagedCheckout(sessions)).paid_total("plink_1") == Decimal("25.00")
+
+
 def test_mint_refuses_live_key_without_connection(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_x")
     fc = _FakeClient()

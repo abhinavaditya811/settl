@@ -5,7 +5,11 @@ import styled, { keyframes } from "styled-components";
 import type { InvoiceDetail, TraceEntry } from "@/lib/types";
 import { getDetail, getTrace } from "@/lib/api";
 import { formatMoney, overdueLabel } from "@/lib/format";
+import { useBoard } from "@/lib/BoardContext";
 import { StateBadge, StatusTag } from "./Badge";
+import DecisionTrace from "./DecisionTrace";
+import FlagForm from "./FlagForm";
+import GuardrailsPanel from "./GuardrailsPanel";
 
 const fadeIn = keyframes`from { opacity: 0; } to { opacity: 1; }`;
 const slideIn = keyframes`from { transform: translateX(24px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; }`;
@@ -105,49 +109,6 @@ const PayLink = styled.a`
   text-decoration: underline;
 `;
 
-const Timeline = styled.ol`
-  list-style: none;
-  margin: 0;
-  padding: 0 0 0 6px;
-`;
-
-const Hop = styled.li`
-  position: relative;
-  padding: 0 0 18px 22px;
-  border-left: 2px solid ${({ theme }) => theme.border};
-  &:last-child {
-    border-left-color: transparent;
-    padding-bottom: 0;
-  }
-  &::before {
-    content: "";
-    position: absolute;
-    left: -7px;
-    top: 2px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: ${({ theme }) => theme.accent};
-    border: 2px solid ${({ theme }) => theme.bg};
-  }
-  .agent {
-    font-weight: 700;
-    font-size: 13.5px;
-  }
-  .decision {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px;
-    color: ${({ theme }) => theme.textMuted};
-    margin-left: 8px;
-  }
-  .why {
-    font-size: 13px;
-    line-height: 1.5;
-    color: ${({ theme }) => theme.textMuted};
-    margin-top: 3px;
-  }
-`;
-
 const Footer = styled.div`
   padding: 16px 24px;
   border-top: 1px solid ${({ theme }) => theme.border};
@@ -172,6 +133,21 @@ const Approve = styled.button`
   &:disabled {
     opacity: 0.55;
     cursor: progress;
+  }
+`;
+
+const FlagBtn = styled.button`
+  width: 100%;
+  padding: 11px;
+  border-radius: 11px;
+  border: 1px solid ${({ theme }) => theme.border};
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  color: ${({ theme }) => theme.text};
+  background: ${({ theme }) => theme.surface};
+  &:hover {
+    background: ${({ theme }) => theme.surfaceAlt};
   }
 `;
 
@@ -213,6 +189,9 @@ export default function InvoiceDrawer({
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [trace, setTrace] = useState<TraceEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showFlag, setShowFlag] = useState(false);
+  const [localRefresh, setLocalRefresh] = useState(0); // re-fetch after a flag
+  const { guardrails } = useBoard();
 
   useEffect(() => {
     let active = true;
@@ -228,7 +207,7 @@ export default function InvoiceDrawer({
     return () => {
       active = false;
     };
-  }, [invoiceId, refreshKey]);
+  }, [invoiceId, refreshKey, localRefresh]);
 
   return (
     <Overlay onClick={onClose}>
@@ -276,28 +255,39 @@ export default function InvoiceDrawer({
               )}
 
               <Label>Decision trace</Label>
-              <Timeline>
-                {trace.map((e, i) => (
-                  <Hop key={i}>
-                    <div>
-                      <span className="agent">{e.agent}</span>
-                      <span className="decision">{e.decision}</span>
-                    </div>
-                    <div className="why">{e.reasoning}</div>
-                  </Hop>
-                ))}
-              </Timeline>
+              <DecisionTrace trace={trace} />
+
+              {guardrails.length > 0 && (
+                <>
+                  <Label>Active guardrails</Label>
+                  <GuardrailsPanel />
+                </>
+              )}
             </Body>
-            {detail.can_approve && (
-              <Footer>
-                <Approve
-                  disabled={approvingId === detail.invoice_id}
-                  onClick={() => onApprove(detail.invoice_id)}
-                >
-                  {approvingId === detail.invoice_id ? "Sending…" : "Approve & Send"}
-                </Approve>
-              </Footer>
-            )}
+            <Footer>
+              {showFlag ? (
+                <FlagForm
+                  invoiceId={detail.invoice_id}
+                  onDone={() => {
+                    setShowFlag(false);
+                    setLocalRefresh((k) => k + 1); // re-fetch the re-orchestrated result
+                  }}
+                  onCancel={() => setShowFlag(false)}
+                />
+              ) : (
+                <>
+                  {detail.can_approve && (
+                    <Approve
+                      disabled={approvingId === detail.invoice_id}
+                      onClick={() => onApprove(detail.invoice_id)}
+                    >
+                      {approvingId === detail.invoice_id ? "Sending…" : "Approve & Send"}
+                    </Approve>
+                  )}
+                  <FlagBtn onClick={() => setShowFlag(true)}>⚑ Flag decision</FlagBtn>
+                </>
+              )}
+            </Footer>
           </>
         )}
       </Panel>

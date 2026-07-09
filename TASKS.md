@@ -45,7 +45,7 @@ New module: `src/settl/orchestrator/`
 - [x] `orchestrator/__init__.py` - public exports (`Orchestrator`, `PipelineResult`, `TerminalState`).
 - [x] Refactor `demo.py` - calls the orchestrator instead of its own ad-hoc loop.
 - [x] `tests/test_orchestrator.py` - all 25 synthetic invoices run end-to-end; loop-back fires for unpaid; every hop logged.
-- [ ] `docs/gcp_setup.md` (B) - project, auth, ADK install, enabled APIs.
+- [ ] `docs/gcp_setup.md` (B) - project, auth, ADK install, enabled APIs. **→ carried to Week 7.**
 
 **Done when:** orchestrator routes all 25 invoices end-to-end, terminal states are
 correct, the unpaid loop re-queues, and the audit log captures every hop. ✅ **Done**
@@ -96,16 +96,19 @@ reply. **Suggested owner:** A on reconcile, B on event fixtures + orchestrator l
 
 New module: `src/settl/agents/reconcile/`
 
-- [ ] `reconcile/payment.py` - **~120** - pure: given invoice + payment/reply events, re-verify status → `PAID | PARTIAL | UNPAID | REPLY`; never chase the already-paid.
-- [ ] `reconcile/fee.py` - **~70** - success-fee **record** (5-10% config) + `FeeRecord` dataclass; explicitly records, never collects (not custodial).
-- [ ] `reconcile/agent.py` - **~100** - `ReconcileAgent.reconcile(invoice, events) → ReconcileOutcome`; logs; decides stop / re-queue / escalate.
-- [ ] `reconcile/__init__.py` - **~15** - exports.
-- [ ] Flesh out `orchestrator/loop.py` - next-touch scheduling, re-queue unpaid, stop on paid, escalate on inbound reply.
-- [ ] `data/synthetic_events.json` + loader hook - **~60** - payment + reply events to drive reconcile against the existing 25 invoices.
-- [ ] `tests/test_reconcile.py` - **~130** - paid → fee recorded + loop stops; unpaid → re-queued; partial → handled; reply → escalated.
+- [x] `reconcile/payment.py` - pure re-derivation over the **full event log**: `tally_events` (dedup by reference, currency guard, refund netting) + `classify` → `PAID | PARTIAL | UNPAID | REPLY | DISPUTED | ANOMALY`; never chase the already-paid.
+- [x] `reconcile/fee.py` - success-fee **record** (5-10% config) + `FeeRecord`; basis **capped at the invoice total** (overpayment never inflates the fee); records, never collects.
+- [x] `reconcile/agent.py` - `ReconcileAgent.reconcile(invoice, events) → ReconcileOutcome`; logs; PAID stops + fee, PARTIAL records a **proportional** fee + carries the residual, DISPUTED/REPLY/ANOMALY escalate + stop.
+- [x] `reconcile/__init__.py` - exports.
+- [x] Flesh out `orchestrator/loop.py` - `next_touch_after_reconcile`: stop on paid, chase the residual on partial, normal cadence on unpaid, escalate + stop on dispute/reply/anomaly.
+- [x] 🔌 **Payment edge cases + Stripe webhook** (`payments/currency.py`, `payments/webhook.py`, `api/state.ingest_webhook`, `POST /stripe/webhook`) - zero-decimal currencies, paginated `paid_sessions` (no session cap), refund/chargeback reversal, and a signature-verified webhook so payments/refunds/disputes update the board **server-side with no tab open**. Poll + webhook share one event log keyed by payment_intent (no double-count).
+- [~] `data/synthetic_events.json` + loader hook - **superseded**: `test_reconcile.py` builds canonical `PaymentEvent`s inline and `test_api.py`/`test_webhook.py` drive the webhook path directly, so no separate fixture file was needed. Add one only if a scripted multi-touch demo wants it.
+- [x] `tests/test_reconcile.py` (+ `tests/test_webhook.py`) - paid → fee + stop; unpaid → re-queue; partial → proportional fee + residual; refund → nets down; dispute → escalate; currency mismatch → anomaly; duplicate reference deduped; overpayment fee capped.
 
 **Done when:** the full loop closes - a paid invoice exits with a recorded fee, an unpaid
-one re-enters the orchestrator, and a reply escalates to a human.
+one re-enters the orchestrator, a reply/dispute escalates to a human, and a refund/
+chargeback reverses automatically because reconcile re-derives net over the full event
+log. ✅ **Done** (reconcile + payment edge cases + Stripe webhook merged; 162 tests green).
 
 ---
 
@@ -115,14 +118,39 @@ exportable for the submission. **Suggested owner:** B (A starts Week-6 e2e wirin
 
 Extends `src/settl/audit/`
 
-- [ ] `audit/sink.py` - **~50** - `LogSink` Protocol so `ExecutionLog` can target local JSONL *or* Agent Engine (dependency injection; keeps local as the test/offline default).
-- [ ] Refactor `audit/execution_log.py` - route writes through a `LogSink` (no behavior change for existing tests).
-- [ ] 🔌 `audit/agent_engine.py` - **~120** - Agent Engine sink implementing `LogSink`.
-- [ ] `audit/export.py` - **~90** - export traces/evidence (the agent-execution logs the submission requires + sales proof).
-- [ ] `tests/test_agent_engine.py` - **~90** - recording to a mocked Agent Engine client; export round-trips.
+- [x] `audit/sink.py` - `LogSink` Protocol + `JsonlSink` (dependency injection; local JSONL stays the offline/test default). JSONL write extracted out of `ExecutionLog`.
+- [x] Refactor `audit/execution_log.py` - in-memory list stays the source of truth; each entry mirrors to any attached `LogSink` (`jsonl_path` constructor + `add_sink`); sink writes are fail-safe. No behavior change for existing tests.
+- [x] 🔌 `audit/agent_engine.py` - `AgentEngineSink` implementing `LogSink` via Google Cloud Logging `log_struct` (Agent Engine reads structured Cloud Logging). Opt-in (`SETTL_USE_AGENT_ENGINE=1`), lazy SDK import, injectable client, fail-safe - same seam pattern as `runtime.py` / Gemini / Stripe. Wired into `BoardState` when armed.
+- [x] `audit/export.py` - `evidence_bundle` / `write_evidence` / `load_evidence`: run-level counts (by agent, by decision) + per-invoice grouped trail, round-trippable JSON. Pure/deterministic.
+- [x] `tests/test_agent_engine.py` - sink seam + fake Cloud Logging client, fail-safe on client error, local JSONL unchanged, evidence export round-trips.
 
 **Done when:** a full synthetic run produces Agent Engine traces, local JSONL still works
-offline, and evidence exports cleanly.
+offline, and evidence exports cleanly. ✅ **Done** (LogSink seam + Agent Engine sink +
+evidence export merged; the sink is a deferred 🔌 seam that lights up when GCP creds land -
+`docs/gcp_setup.md` from Week 1 is still the one prerequisite).
+
+---
+
+## Governance / human-in-the-loop - reasoning drill-down + flag→guardrail→re-orchestrate
+**Goal:** an operator can see *why* an agent decided what it did (the full "thought
+process"), and flag a decision so the engine behaves differently for similar future cases
+- as a durable guardrail, re-orchestrated through the gate. Lands ahead of Week 6 and sets
+its narrative up. **Invariant:** the dashboard only projects; guardrails live in the engine
+and can only make it *stricter* (waive soft rules only; legal/consumer/dispute never).
+
+New module: `src/settl/governance/`
+
+- [x] `governance/rules.py` - `OperatorRule` + `Directive` (ALWAYS_ESCALATE / FORCE_SKIP / FORCE_HOLD / SOFTEN_TONE / WAIVE) + attribute `matches()`.
+- [x] `governance/store.py` - `RuleStore` (in-memory per-tenant; add/matching/all), mirrors the TenantConfig "config steers the engine as input" pattern.
+- [x] `governance/apply.py` - `tighten_strategy` (downgrade-only), `guardrail_violations` (adds `OPERATOR_GUARDRAIL`), `waived_codes` (soft-only, intersected with `WAIVABLE_CODES`). Lazy cross-imports to avoid a cycle.
+- [x] Wire into the engine: `ComplianceGate` (tighten + soft-waive), `StrategyAgent` (tighten after the clamp), `Orchestrator` threads a `RuleStore` via DI (like TenantConfig). `compliance/rules.py` gains `WAIVABLE_CODES` + `OPERATOR_GUARDRAIL`.
+- [x] API: `BoardState.flag_decision` (store + re-orchestrate + log `operator_flag`; refuses waiving a hard code) + `guardrails()`; `POST /invoices/{id}/flag` + `GET /guardrails`; schemas. (`api/metrics.py` extracted to keep `state.py` under cap.)
+- [x] Dashboard: `InvoiceDrawer` reasoning drill-down (per-hop `details` "thought process" via `DecisionTrace`), a `FlagForm` (scope/directive/waive/reason), and a `GuardrailsPanel`; `BoardContext.flag` + proxy routes.
+- [x] `tests/test_governance.py` + red-team extension + `test_api.py` flag tests. **Safety proven:** tighten downgrades only; a near-miss the base gate misses is caught by an `ALWAYS_ESCALATE` guardrail; a WAIVE of `B2B_ONLY` / `LEGAL_THREAT` is refused and still ESCALATES.
+
+**Done when:** flagging a decision re-orchestrates the invoice, stores a guardrail that
+steers similar cases, and no flag can make the engine send something a hard rule blocks.
+✅ **Done** (190 tests green; the deep-reasoning + human-correction loop is live).
 
 ---
 
@@ -130,14 +158,38 @@ offline, and evidence exports cleanly.
 **Goal:** one clean recorded run through the *real* stack for the 3-min video.
 **Suggested owner:** A + B together (buffer week for slippage)
 
-- [ ] `orchestrator/trace.py` - **~110** - pull the decision-trace table formatting out of `demo.py` into a reusable formatter (keeps `demo.py` under cap).
-- [ ] `demo_full.py` - **~90** - full real-stack run (Gemini draft + judgment + gate + reconcile + Agent Engine logs).
-- [ ] `tests/test_e2e.py` - **~130** - system invariants on the real stack (SDK mocked): no consumer/disputed invoice ever sent, paid never chased, ≥1 legitimate send, every invoice logged.
-- [ ] Red-team pass against the live drafting agent (extend `tests/test_gate_redteam.py`).
-- [ ] Demo polish: the "AI knows when *not* to act" narrative in the trace output.
+- [x] `orchestrator/trace.py` - reusable decision-trace formatter (`format_trace_table` / `format_summary` / `format_loop_plan` + `describe_details`) pulled out of `demo.py`; `demo.py` now uses it. Shared by CLI + (indirectly) the dashboard drill-down.
+- [ ] `demo_full.py` - full real-stack run. **→ carried to Week 7.**
+- [ ] `tests/test_e2e.py` - system invariants on the real stack (SDK mocked). **→ carried to Week 7.**
+- [~] Red-team pass against the live drafting agent. Static red-team extended (near-miss + guardrail-catches-it + non-waivable-legal-code). **Live-drafting pass → carried to Week 7.**
+- [~] Demo polish: the "AI knows when *not* to act" narrative. Reasoning drill-down + flag→guardrail loop deliver the story. **Final trace-output polish → carried to Week 7.**
 
 **Done when:** a single recorded run shows the AI drafting, the gate blocking the unsafe
-ones, sends going out, payment reconciling - all in the audit trail.
+ones, sends going out, payment reconciling - all in the audit trail. **Status: the
+decision core is all built and the happy path runs end-to-end (`demo.py` routes all 25
+invoices; 190 tests green). What remains is the recorded real-stack run + e2e invariants +
+GCP doc - carried into Week 7 below.**
+
+---
+
+## Week 7 - Catch-up sprint: real-stack demo, e2e invariants, docs + tech debt
+**Goal:** close out everything left from Weeks 1-6 so the repo is demo- and PR-ready.
+Scoped to one sprint - the **happy path already works end-to-end** (decision core, drafting,
+judgment+clamp, gate, reconcile+webhook, audit→Agent-Engine sink, governance/HITL all built;
+`demo.py` routes all 25 invoices; 190 tests green). What's left is the recorded real-stack
+run, the system-invariant e2e tests, the GCP doc, a live-drafting red-team pass, and one
+pinned refactor - no new engine capability required.
+
+- [ ] `docs/gcp_setup.md` (carried from Week 1) - **~80** - project, auth (ADC), ADK install, enabled APIs; what `SETTL_USE_GEMINI` / `SETTL_USE_AGENT_ENGINE` / `SETTL_USE_STRIPE` need to light up.
+- [ ] `demo_full.py` - **~90** - full real-stack run (Gemini draft + judgment + gate + reconcile + Agent Engine logs), rendered via `orchestrator/trace.py`. Minimal wiring: the rule store, trace formatter, reconcile, and Agent Engine sink all exist.
+- [ ] `tests/test_e2e.py` - **~130** - system invariants on the real stack (SDK mocked): no consumer/disputed invoice ever sent, paid never chased, ≥1 legitimate send, every invoice logged, and a flag→guardrail re-orchestration holds.
+- [ ] Live-drafting red-team pass - drive **real Gemini** drafts through the gate (extend `tests/test_gate_redteam.py`); prove the gate still catches an LLM that strays.
+- [ ] Demo polish - final "AI knows when *not* to act" trace-output narrative for the 3-min video.
+- [ ] **Tech debt (pinned):** extract the reconcile/webhook cluster (`check_payments`, `ingest_webhook`, `_record_event`, `_correlate`, `_apply_reconcile` + their state) out of `BoardState` into a `ReconciliationDesk` collaborator (`api/reconcile_ops.py`) - SRP + gives `api/state.py` headroom under the 400-line cap. Behavior-preserving; `test_api.py`/`test_webhook.py` are the regression net. (Rest of the codebase already follows SOLID - this is the one real smell.)
+
+**Done when:** a single recorded real-stack run shows drafting → gate → send → reconcile in
+the audit trail, `test_e2e.py` invariants pass (SDK mocked), the GCP doc lets a fresh clone
+light up the real integrations, and `state.py` is back under the file cap.
 
 ---
 

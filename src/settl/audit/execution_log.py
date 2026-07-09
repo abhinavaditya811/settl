@@ -1,10 +1,11 @@
 """Structured execution log.
 
 CLAUDE.md treats logging as required, not optional: every agent decision is
-recorded with its reasoning. This in-memory + JSONL implementation is the local
-stand-in for Agent Engine observability (wired later). The shape is intentionally
-flat and serializable so it doubles as audit trail, sales proof, and submission
-evidence.
+recorded with its reasoning. The in-memory list is the source of truth the dashboard
+reads; durable persistence is delegated to swappable ``LogSink``s (``sink.py``): local
+JSONL by default (offline/test), the Agent Engine sink (``agent_engine.py``) for cloud
+observability. The shape is intentionally flat and serializable so it doubles as audit
+trail, sales proof, and submission evidence (exported by ``export.py``).
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from settl.audit.sink import JsonlSink, LogSink
 
 
 @dataclass(frozen=True)
@@ -27,11 +30,25 @@ class LogEntry:
 
 
 class ExecutionLog:
-    """Append-only log. Optionally mirrors entries to a JSONL file."""
+    """Append-only log. Mirrors each entry to any attached ``LogSink`` (JSONL by
+    default when ``jsonl_path`` is given, plus any injected ``sinks``)."""
 
-    def __init__(self, jsonl_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        jsonl_path: str | Path | None = None,
+        *,
+        sinks: list[LogSink] | None = None,
+    ) -> None:
         self._entries: list[LogEntry] = []
-        self._jsonl_path = Path(jsonl_path) if jsonl_path else None
+        self._sinks: list[LogSink] = []
+        if jsonl_path is not None:
+            self._sinks.append(JsonlSink(jsonl_path))
+        if sinks:
+            self._sinks.extend(sinks)
+
+    def add_sink(self, sink: LogSink) -> None:
+        """Attach another durable target (e.g. the Agent Engine sink) at runtime."""
+        self._sinks.append(sink)
 
     def record(
         self,
@@ -50,10 +67,12 @@ class ExecutionLog:
             reasoning=reasoning,
             details=details,
         )
-        self._entries.append(entry)
-        if self._jsonl_path is not None:
-            with self._jsonl_path.open("a") as fh:
-                fh.write(json.dumps(asdict(entry)) + "\n")
+        self._entries.append(entry)  # in-memory is the source of truth, always recorded
+        for sink in self._sinks:
+            try:
+                sink.write(entry)
+            except Exception:
+                pass  # a durable mirror is best-effort; never let it break the pipeline
         return entry
 
     @property

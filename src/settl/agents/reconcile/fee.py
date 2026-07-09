@@ -32,9 +32,16 @@ def record_fee(
     *,
     on_date: date | None = None,
 ) -> FeeRecord:
-    """Compute and return the success-fee record. No side effects, no collection."""
+    """Compute and return the success-fee record. No side effects, no collection.
+
+    The fee basis is **capped at the invoice total** (``min(recovered, amount_due)``):
+    an overpayment never inflates our fee, and on a partial the basis is the recovered
+    amount - so the fee grows proportionally as each partial lands and shrinks if a
+    refund later lowers the net recovered.
+    """
     recovered = Decimal(recovered)
-    fee_amount = (recovered * Decimal(str(fee_pct)) / Decimal(100)).quantize(
+    basis = min(recovered, invoice.amount_due) if invoice.amount_due > 0 else recovered
+    fee_amount = (basis * Decimal(str(fee_pct)) / Decimal(100)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
     return FeeRecord(

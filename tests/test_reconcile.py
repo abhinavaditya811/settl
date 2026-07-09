@@ -11,12 +11,14 @@ from decimal import Decimal
 from settl.agents.reconcile import (
     OperatorNotifier,
     PaymentEvent,
+    PaymentEventKind,
     ReconcileAgent,
     ReconcileStatus,
     reconcile_payment,
     record_fee,
 )
 from settl.audit import ExecutionLog
+from settl.orchestrator import next_touch_after_reconcile
 from settl.schema.invoice import Invoice, InvoiceStatus, Source
 
 
@@ -30,8 +32,25 @@ def _inv(amount="1000.00", iid="INV-R", currency="USD") -> Invoice:
     )
 
 
-def _pay(iid, amount):
-    return PaymentEvent(invoice_id=iid, amount=Decimal(amount), occurred_on=date.today())
+def _pay(iid, amount, currency="USD", ref=""):
+    return PaymentEvent(
+        invoice_id=iid, amount=Decimal(amount), occurred_on=date.today(),
+        currency=currency, reference=ref,
+    )
+
+
+def _refund(iid, amount, ref=""):
+    return PaymentEvent(
+        invoice_id=iid, amount=Decimal(amount), occurred_on=date.today(),
+        kind=PaymentEventKind.REFUND, reference=ref,
+    )
+
+
+def _dispute(iid, ref="dp_1"):
+    return PaymentEvent(
+        invoice_id=iid, amount=Decimal("1000.00"), occurred_on=date.today(),
+        kind=PaymentEventKind.DISPUTE, reference=ref,
+    )
 
 
 # --- pure classification ------------------------------------------------------
@@ -102,3 +121,83 @@ def test_unpaid_does_not_record_a_fee_or_stop():
     assert outcome.status is ReconcileStatus.UNPAID
     assert outcome.stop_loop is False
     assert outcome.fee is None
+
+
+# --- edge cases: refunds, disputes, currency, dedup, overpayment --------------
+
+
+def test_refund_nets_a_paid_invoice_back_to_partial():
+    # Paid in full, then a refund lands: net drops below due → PARTIAL, no special code.
+    inv = _inv("1000.00")
+    events = [_pay("INV-R", "1000.00", ref="pi_1"), _refund("INV-R", "400.00", ref="ch_1")]
+    status, net = reconcile_payment(inv, events)
+    assert status is ReconcileStatus.PARTIAL and net == Decimal("600.00")
+
+
+def test_full_refund_reverts_to_unpaid():
+    inv = _inv("1000.00")
+    events = [_pay("INV-R", "1000.00", ref="pi_1"), _refund("INV-R", "1000.00", ref="ch_1")]
+    assert reconcile_payment(inv, events)[0] is ReconcileStatus.UNPAID
+
+
+def test_dispute_escalates_and_stops_the_loop():
+    agent = ReconcileAgent()
+    outcome = agent.reconcile(_inv("1000.00"), [_pay("INV-R", "1000.00"), _dispute("INV-R")])
+    assert outcome.status is ReconcileStatus.DISPUTED
+    assert outcome.escalate is True and outcome.stop_loop is True
+
+
+def test_currency_mismatch_is_an_anomaly_never_summed():
+    # A EUR payment against a USD invoice is unusable data → escalate, do not act.
+    inv = _inv("1000.00", currency="USD")
+    outcome = ReconcileAgent().reconcile(inv, [_pay("INV-R", "1000.00", currency="EUR")])
+    assert outcome.status is ReconcileStatus.ANOMALY
+    assert outcome.escalate is True and outcome.amount_recovered == Decimal("0")
+
+
+def test_duplicate_reference_is_deduped():
+    # A webhook + a poll reporting the same payment must not double-count.
+    inv = _inv("1000.00")
+    dup = [_pay("INV-R", "600.00", ref="pi_1"), _pay("INV-R", "600.00", ref="pi_1")]
+    status, net = reconcile_payment(inv, dup)
+    assert status is ReconcileStatus.PARTIAL and net == Decimal("600.00")
+
+
+def test_partial_records_proportional_fee_and_carries_balance():
+    agent = ReconcileAgent(success_fee_pct=10.0)
+    outcome = agent.reconcile(_inv("1000.00"), [_pay("INV-R", "400.00")])
+    assert outcome.status is ReconcileStatus.PARTIAL
+    assert outcome.stop_loop is False
+    assert outcome.fee.fee_amount == Decimal("40.00")  # 10% of the 400 recovered
+    assert outcome.remaining_balance == Decimal("600.00")
+
+
+def test_overpayment_fee_is_capped_at_the_invoice_total():
+    # Debtor overpays; our fee is on the invoice amount, never the surplus.
+    fee = record_fee(_inv("1000.00"), Decimal("1200.00"), 10.0)
+    assert fee.fee_amount == Decimal("100.00")  # 10% of 1000, not 1200
+
+
+# --- loop closure driven by reconcile -----------------------------------------
+
+
+def _paid_result():
+    from settl.orchestrator.result import PipelineResult, TerminalState
+    return PipelineResult(invoice_id="INV-R", terminal_state=TerminalState.SENT)
+
+
+def test_loop_stops_on_paid_and_chases_residual_on_partial():
+    r = _paid_result()
+    paid = ReconcileAgent().reconcile(_inv("1000.00"), [_pay("INV-R", "1000.00")])
+    partial = ReconcileAgent().reconcile(_inv("1000.00"), [_pay("INV-R", "400.00")])
+
+    assert next_touch_after_reconcile(r, paid).requeue is False
+    d = next_touch_after_reconcile(r, partial)
+    assert d.requeue is True and d.escalate is False
+
+
+def test_loop_escalates_and_stops_on_dispute():
+    r = _paid_result()
+    disp = ReconcileAgent().reconcile(_inv("1000.00"), [_pay("INV-R", "1000.00"), _dispute("INV-R")])
+    d = next_touch_after_reconcile(r, disp)
+    assert d.requeue is False and d.escalate is True
