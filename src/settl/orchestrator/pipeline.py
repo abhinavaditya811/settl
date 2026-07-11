@@ -193,7 +193,11 @@ class Orchestrator:
         the approval is refused and the message escalates. This is the single path
         a first-contact message can legitimately reach the sender; the dashboard's
         approve button calls exactly this."""
-        result = self._gate.evaluate(invoice, message)
+        # Gate is channel-aware: a voice approval runs the voice rules too. Until a
+        # per-debtor consent source is wired (Phase 3), a VOICE send has no
+        # VoiceContext here, so the gate fails safe (VOICE_NO_CONSENT → escalate)
+        # rather than clear a call whose consent/disclosure was never checked.
+        result = self._gate.evaluate(invoice, message, channel=channel)
         steps = [PipelineStep("compliance_gate", result.decision.value, result.reasoning)]
         other = set(result.codes) - {_APPROVAL_CODE}
         if other:
@@ -238,8 +242,10 @@ class Orchestrator:
         steps.append(PipelineStep("drafting", source, "candidate drafted for the gate"))
         channel = decision.channel.value if decision.channel else None
 
-        # The gate is the only authority that clears a send.
-        result = self._gate.evaluate(invoice, message)
+        # The gate is the only authority that clears a send - and it's channel-aware,
+        # so a voice CHASE runs the voice rules (fail-safe: no VoiceContext yet →
+        # escalate). Email/SMS are unaffected (voice rules are guarded by channel).
+        result = self._gate.evaluate(invoice, message, channel=decision.channel)
         steps.append(PipelineStep("compliance_gate", result.decision.value, result.reasoning))
 
         if not result.passed:

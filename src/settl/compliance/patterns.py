@@ -89,6 +89,17 @@ URL = [
     r"\bwww\.\S+",
 ]
 
+# AI-voice disclosure (VOICE_AGENT_SPEC §3a.1): a voice call MUST open by clearly
+# stating it is an AI/automated voice - for BOTH the default and cloned voice. The
+# gate looks for one of these near the top of the spoken script; absence escalates.
+AI_DISCLOSURE = [
+    r"\ba\.?\s?i\.?[- ]?(assistant|voice|agent|generated|automated)\b",
+    r"\bartificial(ly)?[- ]?(intelligence|generated)?[- ]?voice\b",
+    r"\bautomated (call|voice|assistant|message|system)\b",
+    r"\bpre-?recorded\b",
+    r"\bthis (call )?is (an?|being) (ai|a\.?i\.?|automated|artificial|recorded)\b",
+]
+
 
 def _compile(patterns: list[str]) -> list[re.Pattern]:
     return [re.compile(p, re.IGNORECASE) for p in patterns]
@@ -112,3 +123,4 @@ TONE_BREACH_RE = _compile(TONE_BREACH)
 INBOUND_DISPUTE_RE = _compile(INBOUND_DISPUTE)
 INBOUND_PAYMENT_PLAN_RE = _compile(INBOUND_PAYMENT_PLAN)
 URL_RE = _compile(URL)
+AI_DISCLOSURE_RE = _compile(AI_DISCLOSURE)

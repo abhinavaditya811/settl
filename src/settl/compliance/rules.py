@@ -15,6 +15,7 @@ a compliance check anywhere else in the codebase.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import time
 
 from settl.compliance import patterns as P
 from settl.schema.invoice import (
@@ -206,6 +207,73 @@ def rule_no_fabricated_link(message: str) -> list[RuleViolation]:
                 "FABRICATED_LINK",
                 f"Message contains a non-placeholder URL ({', '.join(hits)}) - only "
                 "{{payment_link}} is allowed; the sender resolves the real link.",
+            )
+        ]
+    return []
+
+
+# --- voice-channel rules (VOICE_AGENT_SPEC §3a) -------------------------------
+# These fire ONLY on a voice send (the gate guards them behind channel == VOICE).
+# They are HARD rules - none is in WAIVABLE_CODES, so an operator cannot waive a
+# missing AI disclosure or missing call consent. Inputs arrive as primitives (a
+# ``VoiceContext``) so the gate never has to import ``tenancy`` - the caller unpacks
+# the tenant's ``audio`` config + the per-debtor consent + the intended dial time,
+# exactly as contact-frequency bounds are passed as plain ints, not a ``Policy``.
+
+# How near the start of the spoken script the AI disclosure must appear.
+DISCLOSURE_WINDOW_CHARS = 200
+
+
+@dataclass(frozen=True)
+class VoiceContext:
+    """Per-call inputs the voice rules need, as primitives (no tenancy import)."""
+
+    call_consent: bool = False  # prior express consent to call THIS debtor, on file
+    now_local: time | None = None  # debtor-local time of the intended dial
+    window_start: time | None = None  # allowed call window (local), inclusive
+    window_end: time | None = None
+
+
+def rule_voice_disclosure(message: str) -> list[RuleViolation]:
+    """The spoken script MUST open by disclosing it's an AI/automated voice. We check
+    the opening (not just anywhere) - the disclosure has to come first, not be buried."""
+    opening = message[:DISCLOSURE_WINDOW_CHARS]
+    if not P.matches(opening, P.AI_DISCLOSURE_RE):
+        return [
+            RuleViolation(
+                "VOICE_NO_DISCLOSURE",
+                "Voice script does not open with an AI-voice disclosure - required at "
+                "call open for both default and cloned voices; escalate, do not dial.",
+            )
+        ]
+    return []
+
+
+def rule_voice_consent(ctx: VoiceContext) -> list[RuleViolation]:
+    """We may only dial a debtor who has prior express consent to be called on file."""
+    if not ctx.call_consent:
+        return [
+            RuleViolation(
+                "VOICE_NO_CONSENT",
+                "No call consent on file for this debtor - do not dial; escalate.",
+            )
+        ]
+    return []
+
+
+def rule_voice_call_window(ctx: VoiceContext) -> list[RuleViolation]:
+    """Only dial within the allowed local call hours. If the window or the intended
+    dial time isn't supplied we don't fire here (nothing to check yet)."""
+    if ctx.now_local is None or ctx.window_start is None or ctx.window_end is None:
+        return []
+    if not (ctx.window_start <= ctx.now_local <= ctx.window_end):
+        return [
+            RuleViolation(
+                "VOICE_OUTSIDE_HOURS",
+                f"Intended dial at {ctx.now_local.isoformat(timespec='minutes')} is "
+                f"outside the allowed call window "
+                f"{ctx.window_start.isoformat(timespec='minutes')}-"
+                f"{ctx.window_end.isoformat(timespec='minutes')} - escalate, do not dial.",
             )
         ]
     return []
