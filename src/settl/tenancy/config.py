@@ -90,6 +90,11 @@ class Audio:
     default_voice_id: str = "default"  # stock fallback, always set
     clone_consent: ConsentRecord | None = None  # required + active to use a clone
     call_window: CallWindow = field(default_factory=CallWindow)
+    # When strategy may PICK the voice channel (spec §9.4): voice is an escalation
+    # step, not a first touch - only this overdue, only after emails/texts didn't
+    # land. Strategy inputs only; the gate still judges every call independently.
+    min_days_overdue: int = 30
+    min_prior_touches: int = 2
 
     @property
     def active_voice_id(self) -> str:

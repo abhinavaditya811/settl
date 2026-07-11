@@ -38,15 +38,23 @@ export const decisions: DecisionRow[] = [
 ];
 
 export interface Approval {
-  initials: string; name: string; amount: string; overdue: string; channel: string; draft: string;
+  initials: string; name: string; amount: string; overdue: string; channel: string; sub: string; draft: string;
 }
 export const approvals: Approval[] = [
   { initials: "BS", name: "Brightline Studio", amount: "$1,000", overdue: "7 days overdue", channel: "email",
+    sub: "$1,000 · 7 days overdue · email draft",
     draft: "Hi Brightline Studio, just a friendly reminder that invoice INV-031 for $1,000 is now 7 days past due. You can settle it here whenever convenient: {{payment_link}}. Thanks so much!" },
   { initials: "AS", name: "Acme Supply Co", amount: "$1,090", overdue: "12 days overdue", channel: "email",
+    sub: "$1,090 · 12 days overdue · email draft",
     draft: "Hi Acme Supply Co, a quick note that invoice INV-034 for $1,090 is now 12 days overdue. Here is your secure payment link to settle it: {{payment_link}}. Let us know if anything is holding it up." },
   { initials: "VT", name: "Vertex Tooling", amount: "$750", overdue: "9 days overdue", channel: "sms",
+    sub: "$750 · 9 days overdue · text draft",
     draft: "Hi Vertex Tooling — invoice INV-029 for $750 is 9 days past due. Settle it here whenever you can: {{payment_link}}. Thank you!" },
+  // A first VOICE call held for approval: the script the agent will speak (AI
+  // disclosure first; the payment link travels by SMS, never read aloud).
+  { initials: "AM", name: "Atlas Mechanical", amount: "$6,800", overdue: "21 days overdue", channel: "voice",
+    sub: "$6,800 · 21 days overdue · voice call — press play to hear the script",
+    draft: "Hi, this is an AI assistant calling on behalf of Brightline Collective. This is a friendly reminder that invoice INV-012 for six thousand eight hundred dollars is twenty-one days past due. Please settle it at your earliest convenience. I'll text you a secure link to pay right after this call." },
 ];
 
 export interface FeedRow { initials: string; tone: Tone; line: string; sub: string; status: string; time: string; }

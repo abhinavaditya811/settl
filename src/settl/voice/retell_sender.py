@@ -34,6 +34,7 @@ from settl.audit.execution_log import ExecutionLog
 from settl.config import load_dotenv
 from settl.schema.invoice import Channel, Invoice
 from settl.sending.base import GatedSender
+from settl.voice.registry import DialLedger
 
 _API_URL = "https://api.retellai.com/v2/create-phone-call"
 _TIMEOUT_SECS = 30
@@ -45,6 +46,11 @@ class MissingTelephonyConfig(RuntimeError):
 
 class CallFailed(RuntimeError):
     """Retell refused or failed to register the outbound call."""
+
+
+class AlreadyDialed(CallFailed):
+    """The dial ledger shows this invoice was already called today - never
+    double-dial the same invoice for the same touch (VOICE_AGENT_SPEC §3b.17)."""
 
 
 def _request(url: str, *, headers: dict[str, str], data: bytes) -> tuple[int, bytes]:
@@ -73,8 +79,12 @@ class RetellVoiceSender(GatedSender):
         from_number: str | None = None,
         agent_id: str | None = None,
         force_recipient: str | None = None,
+        ledger: DialLedger | None = None,
     ) -> None:
         super().__init__(log=log, default_payment_link=default_payment_link)
+        # Idempotency (spec §3b.17): when a ledger is supplied, an invoice already
+        # dialed today raises AlreadyDialed instead of ringing the debtor again.
+        self._ledger = ledger
         load_dotenv()  # surface .env-provided creds, same as Gemini/ElevenLabs
         self._key = api_key or os.environ.get("RETELL_API_KEY")
         self._from = from_number or os.environ.get("RETELL_FROM_NUMBER")
@@ -95,6 +105,10 @@ class RetellVoiceSender(GatedSender):
         to = self._force_recipient or invoice.contact_for(Channel.VOICE)
         if not to:
             raise CallFailed(f"{invoice.invoice_id}: no phone number to dial.")
+        if self._ledger is not None and self._ledger.already_dialed(invoice):
+            raise AlreadyDialed(
+                f"{invoice.invoice_id}: already dialed today - refusing to double-dial."
+            )
 
         # message = CallScript.full after gate + link resolution. Split the legs: the
         # spoken script goes to the agent; the SMS line (with the REAL link) does NOT.
@@ -122,6 +136,8 @@ class RetellVoiceSender(GatedSender):
             raise CallFailed(f"Retell rejected the call ({status}): "
                              f"{payload.decode('utf-8', 'replace')[:200]}")
         call_id = json.loads(payload.decode("utf-8")).get("call_id", "?")
+        if self._ledger is not None:
+            self._ledger.mark(invoice)  # Retell accepted → this touch is spent
 
         original = invoice.contact_for(Channel.VOICE)
         redirected = (

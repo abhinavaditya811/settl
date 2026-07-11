@@ -232,6 +232,7 @@ class VoiceContext:
     now_local: time | None = None  # debtor-local time of the intended dial
     window_start: time | None = None  # allowed call window (local), inclusive
     window_end: time | None = None
+    opted_out: bool = False  # debtor is on the do-not-call registry → never dial
 
 
 def rule_voice_disclosure(message: str) -> list[RuleViolation]:
@@ -274,6 +275,30 @@ def rule_voice_call_window(ctx: VoiceContext) -> list[RuleViolation]:
                 f"outside the allowed call window "
                 f"{ctx.window_start.isoformat(timespec='minutes')}-"
                 f"{ctx.window_end.isoformat(timespec='minutes')} - escalate, do not dial.",
+            )
+        ]
+    return []
+
+
+def rule_voice_opt_out(invoice: Invoice, ctx: VoiceContext) -> list[RuleViolation]:
+    """An opt-out is immediate and permanent (§3a.8): never dial a debtor who is on
+    the do-not-call registry OR who asked us to stop in any inbound reply. Both
+    signals are checked so a registry that wasn't updated yet still can't be dialed
+    past a written "stop calling"."""
+    if ctx.opted_out:
+        return [
+            RuleViolation(
+                "VOICE_OPTED_OUT",
+                "Debtor is on the do-not-call registry - never dial; escalate.",
+            )
+        ]
+    hits = P.matches(_inbound_text(invoice), P.INBOUND_OPT_OUT_RE)
+    if hits:
+        return [
+            RuleViolation(
+                "VOICE_OPTED_OUT",
+                f"Debtor asked us to stop in a reply ({', '.join(hits)}) - honor the "
+                "opt-out; never dial; escalate.",
             )
         ]
     return []

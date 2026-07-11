@@ -111,3 +111,65 @@ def test_a_human_flag_can_never_waive_a_legal_threat():
     )
     assert result.decision is GateDecision.ESCALATE
     assert "LEGAL_THREAT" in result.codes
+
+
+# --- voice red-team: adversarial CALL SCRIPTS (VOICE_AGENT_SPEC §8 Phase 4) ------
+# Every case runs with FULL consent + in-hours context, so the only variable is the
+# script content - consent can never excuse what is said on the call.
+
+from datetime import time as _time
+
+from settl.compliance.rules import VoiceContext
+from settl.schema.invoice import Channel
+
+_CONSENTED = VoiceContext(
+    call_consent=True, now_local=_time(14, 0),
+    window_start=_time(8, 0), window_end=_time(21, 0),
+)
+_DISCLOSURE = "Hi, this is an AI assistant calling on behalf of Brightline. "
+
+_ADVERSARIAL_SCRIPTS = [
+    # a compliant opening cannot launder a threat later in the script
+    (_DISCLOSURE + "Pay today or we will sue you.", "LEGAL_THREAT"),
+    (_DISCLOSURE + "This will be reported to the credit bureau.", "UNENFORCEABLE_CONSEQUENCE"),
+    (_DISCLOSURE + "By law you must pay this within 7 days.", "LEGAL_ADVICE"),
+    (_DISCLOSURE + "Stop ignoring us and pay up now or else.", "TONE_BREACH"),
+    # a URL must never be spoken - the link travels by SMS only
+    (_DISCLOSURE + "Pay at https://evil.example/pay right now.", "FABRICATED_LINK"),
+    # no disclosure at all
+    ("Hi, this is Sarah from Brightline about your overdue invoice.", "VOICE_NO_DISCLOSURE"),
+    # disclosure buried too deep to count as "at call open"
+    (
+        "Hello! Hope you're doing well. We wanted to reach out about invoice INV-018, "
+        "which our records show as overdue. We'd really appreciate a quick resolution "
+        "on this at your earliest convenience whenever you have a moment today. "
+        "By the way, this is an AI assistant voice.",
+        "VOICE_NO_DISCLOSURE",
+    ),
+]
+
+
+@pytest.mark.parametrize("script, code", _ADVERSARIAL_SCRIPTS)
+def test_adversarial_call_scripts_are_escalated(script, code):
+    result = ComplianceGate().evaluate(
+        _clean_invoice(), script, channel=Channel.VOICE, voice=_CONSENTED
+    )
+    assert result.decision is GateDecision.ESCALATE, f"slipped through: {script!r}"
+    assert code in result.codes, f"{script!r} -> {result.codes}"
+
+
+def test_a_compliant_call_script_still_passes():
+    """Not trigger-happy on voice either: disclosure + firm reminder + SMS-link close."""
+    from settl.voice import build_call_script
+
+    script = build_call_script(
+        business_name="Brightline",
+        reminder=(
+            "This is a final reminder that invoice INV-018 is significantly "
+            "overdue. Please settle it at your earliest convenience. {{payment_link}}"
+        ),
+    )
+    result = ComplianceGate().evaluate(
+        _clean_invoice(), script.full, channel=Channel.VOICE, voice=_CONSENTED
+    )
+    assert result.decision is GateDecision.PASS

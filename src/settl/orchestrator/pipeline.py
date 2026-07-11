@@ -105,6 +105,10 @@ class Orchestrator:
             log=log,
             min_days_between_touches=config.policy.min_days_between_touches,
             allowed_tones=config.policy.allowed_tones,
+            # Voice eligibility comes from the audio slice: opt-in, escalation-only.
+            voice_enabled=config.audio.enabled,
+            voice_min_days_overdue=config.audio.min_days_overdue,
+            voice_min_prior_touches=config.audio.min_prior_touches,
             rules_store=rules_store,
         )
 

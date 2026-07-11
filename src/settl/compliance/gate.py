@@ -109,6 +109,7 @@ class ComplianceGate:
                 violations.extend(rules.rule_voice_disclosure(message))
             violations.extend(rules.rule_voice_consent(vctx))
             violations.extend(rules.rule_voice_call_window(vctx))
+            violations.extend(rules.rule_voice_opt_out(invoice, vctx))
 
         # Operator guardrails: add any tightening escalations, then drop soft-rule
         # violations the operator explicitly waived (hard codes are never in the set).

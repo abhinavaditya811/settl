@@ -228,16 +228,50 @@ The gate, human-in-the-loop, per-tenant isolation, and audit log are **reused as
 
 ## 8. Phased build plan
 
-| Phase | What | Live SDKs? |
-|---|---|---|
-| **0** | This spec → Abhinav review + decisions (§9) | — |
-| **1** | Schema + `MockVoiceSender` + `voice/script.py` + voice gate rules + channel wiring + **tests** (all offline) | No |
-| **2** | ElevenLabs **default voice** TTS (render audio) + **clone onboarding** (opt-in, consent) | ElevenLabs |
-| **3** | **Live calls** via Vapi/Retell + Twilio, behind a flag; recording + artifact + consent citation | Full |
-| **4** | Compliance hardening: call-hour + opt-out + frequency enforcement, **red-team the scripts** through the gate | — |
+| Phase | What | Live SDKs? | Status |
+|---|---|---|---|
+| **0** | This spec → Abhinav review + decisions (§9) | — | ✅ done |
+| **1** | Schema + `MockVoiceSender` + `voice/script.py` + voice gate rules + channel wiring + **tests** (all offline) | No | ✅ done |
+| **2** | ElevenLabs **default voice** TTS (render audio) + **clone onboarding** (opt-in, consent) | ElevenLabs | ✅ done (cloning live needs a paid tier — §10) |
+| **3** | **Live calls** via Retell, behind env config; artifact + transcript pull-back + consent records | Retell | ✅ done — **live-verified 2026-07-11** |
+| **4** | Compliance hardening: call-hour + opt-out + do-not-call + idempotent dialing, **red-team the scripts** through the gate | — | ✅ done |
 
 We ship value at Phase 1 (safe, testable, no telephony) — mirroring how the email
 sender was mock-first until a pilot.
+
+---
+
+## 10. Status & remaining roadmap (post Phases 1–4)
+
+**Built and tested** (PR #13): `Channel.VOICE` end-to-end; the `audio` tenant slice;
+call-script builder (disclosure-first, URL-never-spoken); gate rules
+`VOICE_NO_DISCLOSURE` / `VOICE_NO_CONSENT` / `VOICE_OUTSIDE_HOURS` / `VOICE_OPTED_OUT`
+(all hard, none waivable); per-debtor `ConsentStore` + `DoNotCallRegistry` +
+`DialLedger` (never double-dial); strategy escalates to voice (opt-in, 30d+, after
+written touches); mock + live (Retell) senders behind one seam; TTS seam (mock / macOS
+`say` / ElevenLabs); consent-gated clone onboarding; `CallArtifact` pull-back with
+deterministic outcome labelling ("stop calling" → do-not-call, immediately); the
+companion SMS leg through the `Sender` seam; dashboard voice-approval card with a
+script play button. A real call was placed and answered on 2026-07-11.
+
+**Remaining (deliberately deferred):**
+
+1. **Voice cloning live** — code path is done and consent-gated; activating it needs
+   ElevenLabs Starter (~$5/mo, commercial rights). One config change.
+2. **Live SMS provider** — the SMS leg runs mock-first behind the existing `Sender`
+   seam; wire Twilio (or Retell in-call SMS) when a pilot needs real texts.
+3. **Webhook artifact ingestion** — today we *pull* call artifacts (`--pull CALL_ID`);
+   production should also accept Retell's end-of-call webhook (push), same mapper.
+4. **Consent capture UX** — consent records exist in the engine; the dashboard needs
+   the "debtor agreed to calls" capture + display (and per-debtor revoke button).
+5. **Per-state recording consent** — recording announcement text keyed by the debtor's
+   two-party-consent state; recordings encrypted at rest with 4–7y retention.
+6. **Durable stores** — `ConsentStore`/`DoNotCallRegistry`/`DialLedger` are in-memory
+   (like the audit log); move to the DB with RLS when persistence lands (SCHEMA.md).
+7. **Debtor-local time zones** — the call-window check uses a caller-supplied local
+   time; resolve the debtor's timezone from their number/address for production.
+8. **Conversational depth v2** — v1 is a compliant reminder + simple replies; a fuller
+   two-way agent (negotiation-free, still gate-scripted) is a later, bigger surface.
 
 ---
 
