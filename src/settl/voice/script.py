@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER
+from settl.voice.recording import recording_disclosure
 
 # The AI-voice disclosure spoken first on every call, for BOTH the default and the
 # cloned voice (§3a.1). Phrased to satisfy ``patterns.AI_DISCLOSURE_RE``.
@@ -62,14 +63,23 @@ def build_call_script(
     business_name: str,
     reminder: str,
     include_payment_link: bool = True,
+    record_call: bool = False,
+    debtor_state: str | None = None,
 ) -> CallScript:
-    """Assemble the call script: AI disclosure → the drafted reminder → link close.
+    """Assemble the call script: AI disclosure → (recording line) → reminder → link close.
 
     ``reminder`` is the message drafting already produced (in the tenant's writing
     voice). ``include_payment_link`` is True for a normal chase; set False only when
     there is deliberately no link leg (the gate/sender then have nothing to resolve).
+    When ``record_call`` is True the recording disclosure is spoken right after the
+    AI disclosure, keyed by ``debtor_state`` (two-party AND unknown states announce;
+    only a known one-party state skips it - recording.py).
     """
     disclosure = DISCLOSURE_TEMPLATE.format(business=business_name)
+    if record_call:
+        rec_line = recording_disclosure(debtor_state)
+        if rec_line:
+            disclosure = f"{disclosure} {rec_line}"
     body = _spoken_reminder(reminder)
     if include_payment_link:
         spoken = f"{disclosure} {body} {LINK_CLOSE}".strip()

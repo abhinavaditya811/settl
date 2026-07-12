@@ -80,11 +80,21 @@ class RetellVoiceSender(GatedSender):
         agent_id: str | None = None,
         force_recipient: str | None = None,
         ledger: DialLedger | None = None,
+        business_name: str = "",
+        escalation_number: str | None = None,
+        business_facts: str = "",
     ) -> None:
         super().__init__(log=log, default_payment_link=default_payment_link)
         # Idempotency (spec §3b.17): when a ledger is supplied, an invoice already
         # dialed today raises AlreadyDialed instead of ringing the debtor again.
         self._ledger = ledger
+        # Tenant context injected per call as dynamic variables (one sender per
+        # tenant per run, like every sender): identity.business_name, and the audio
+        # slice's escalation_number ({{transfer_number}} for the Call Transfer tool)
+        # + business_facts (per-tenant FAQ grounding for the shared agent).
+        self._business_name = business_name
+        self._escalation_number = escalation_number
+        self._business_facts = business_facts
         load_dotenv()  # surface .env-provided creds, same as Gemini/ElevenLabs
         self._key = api_key or os.environ.get("RETELL_API_KEY")
         self._from = from_number or os.environ.get("RETELL_FROM_NUMBER")
@@ -96,6 +106,27 @@ class RetellVoiceSender(GatedSender):
     @property
     def configured(self) -> bool:
         return bool(self._key and self._from and self._agent_id)
+
+    def _dynamic_variables(self, invoice: Invoice, spoken: str) -> dict[str, str]:
+        """Per-call context for the agent (Retell wants string values). The verbatim
+        opener plus the invoice FACTS, so the agent answers "which invoice? how
+        much?" accurately instead of improvising. The payment link is deliberately
+        absent - a URL is texted, never given to the voice provider (§3a.10)."""
+        variables = {
+            "script": spoken,
+            "business_name": self._business_name,
+            "invoice_id": invoice.invoice_id,
+            "amount_due": f"{invoice.amount_due} {invoice.currency}",
+            "days_overdue": str(invoice.days_overdue),
+            "debtor_name": invoice.debtor_name,
+        }
+        # Optional legs: only included when configured, so a dashboard tool bound to
+        # {{transfer_number}} simply never fires for tenants without a handoff line.
+        if self._escalation_number:
+            variables["transfer_number"] = self._escalation_number
+        if self._business_facts:
+            variables["business_facts"] = self._business_facts
+        return variables
 
     def _deliver(self, invoice: Invoice, message: str, channel: Channel | None) -> str:
         if not self.configured:
@@ -119,8 +150,7 @@ class RetellVoiceSender(GatedSender):
                 "from_number": self._from,
                 "to_number": to,
                 "override_agent_id": self._agent_id,
-                # The agent's dashboard prompt delivers {{script}} verbatim.
-                "retell_llm_dynamic_variables": {"script": spoken},
+                "retell_llm_dynamic_variables": self._dynamic_variables(invoice, spoken),
                 "metadata": {"invoice_id": invoice.invoice_id, "tenant_id": invoice.tenant_id},
             }
         ).encode("utf-8")

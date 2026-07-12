@@ -338,9 +338,12 @@ Engine: `src/settl/voice/`
 - [x] dashboard: voice approval card with a script play button (preview surface).
 - [ ] 🔌 voice cloning LIVE - needs ElevenLabs Starter (~$5/mo, commercial rights); code path done.
 - [ ] 🔌 live SMS provider (Twilio) behind the same `Sender` seam.
-- [ ] 🔌 Retell end-of-call webhook (push artifacts; today we pull with `--pull`).
+- [x] 🔌 Retell end-of-call webhook - `POST /retell/webhook`, signature-verified, same artifact recorder as `--pull`.
+- [x] rich per-call dynamic variables (invoice facts, business name, {{transfer_number}} handoff, per-tenant business_facts).
+- [x] recording disclosure per US state (`voice/recording.py`, conservative) + debtor-local clock (`voice/timezones.py`).
+- [x] red-team transcripts: injection never buys a good outcome; dispute/opt-out outrank pay-words.
 - [ ] consent-capture UX in the dashboard (grant/revoke per debtor) + durable stores (DB + RLS).
-- [ ] debtor-local timezone resolution for the call window; per-state recording consent text.
+- [ ] adapters carry the debtor's US state so production feeds the timezone + recording helpers automatically.
 
 ## Suggested two-person split
 - **A (orchestration/core):** Week 1 orchestrator, Week 3 judgment+bounds, Week 4 reconcile, Week 6 e2e.

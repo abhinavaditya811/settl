@@ -144,6 +144,38 @@ def artifact_from_payload(
     )
 
 
+def record_artifact(
+    artifact: CallArtifact,
+    *,
+    log: ExecutionLog | None = None,
+    do_not_call: DoNotCallRegistry | None = None,
+    called_number: str = "",
+    source: str = "pull",
+) -> CallArtifact:
+    """Record one artifact: execution-log entry (agent ``voice_artifact``) and, when
+    the outcome is ``opted_out``, immediate do-not-call registration - the gate then
+    refuses every future dial to that debtor. Shared by the pull path and the
+    webhook (one recorder, two transports)."""
+    number = artifact.called_number or called_number
+    if artifact.outcome == "opted_out" and do_not_call is not None and number:
+        do_not_call.register(artifact.tenant_id, number)
+    if log is not None:
+        details = asdict(artifact)
+        details.pop("invoice_id")  # already the entry's own key
+        details["source"] = source
+        log.record(
+            invoice_id=artifact.invoice_id,
+            agent="voice_artifact",
+            decision=artifact.outcome,
+            reasoning=(
+                f"Call {artifact.call_id} ended ({artifact.duration_secs}s) - "
+                f"outcome: {artifact.outcome}."
+            ),
+            **details,
+        )
+    return artifact
+
+
 def pull_call_artifact(
     call_id: str,
     *,
@@ -155,29 +187,12 @@ def pull_call_artifact(
     api_key: str | None = None,
     **send_context,
 ) -> CallArtifact:
-    """Fetch → map → record: the one call that closes the loop after a dial.
-
-    Writes the artifact to the execution log (agent ``voice_artifact``) and, when the
-    outcome is ``opted_out``, registers the number on the do-not-call registry at
-    once - the gate then refuses every future dial to that debtor."""
+    """Fetch → map → record: closes the loop after a dial (the PULL transport;
+    ``webhook.py`` is the push one)."""
     artifact = artifact_from_payload(
         fetch_call(call_id, api_key=api_key),
         invoice_id=invoice_id, tenant_id=tenant_id, **send_context,
     )
-    number = artifact.called_number or called_number
-    if artifact.outcome == "opted_out" and do_not_call is not None and number:
-        do_not_call.register(tenant_id, number)
-    if log is not None:
-        details = asdict(artifact)
-        details.pop("invoice_id")  # already the entry's own key
-        log.record(
-            invoice_id=invoice_id,
-            agent="voice_artifact",
-            decision=artifact.outcome,
-            reasoning=(
-                f"Call {artifact.call_id} ended ({artifact.duration_secs}s) - "
-                f"outcome: {artifact.outcome}."
-            ),
-            **details,
-        )
-    return artifact
+    return record_artifact(
+        artifact, log=log, do_not_call=do_not_call, called_number=called_number
+    )

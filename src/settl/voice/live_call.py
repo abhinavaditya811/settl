@@ -117,7 +117,10 @@ def main(argv: list[str] | None = None) -> int:
         print("\nGate escalated — NOT dialing. (Pass --consented, and call in-hours.)")
         return 1
 
-    sender = RetellVoiceSender(force_recipient=args.to, ledger=ledger)
+    sender = RetellVoiceSender(
+        force_recipient=args.to, ledger=ledger, business_name=BUSINESS,
+        business_facts="Invoices are payable by card via the secure link we text.",
+    )
     if not sender.configured:
         print("\nMissing Retell config. Put in the gitignored .env:")
         print("  RETELL_API_KEY=key_...\n  RETELL_FROM_NUMBER=+1...\n  RETELL_AGENT_ID=agent_...")

@@ -254,24 +254,38 @@ deterministic outcome labelling ("stop calling" → do-not-call, immediately); t
 companion SMS leg through the `Sender` seam; dashboard voice-approval card with a
 script play button. A real call was placed and answered on 2026-07-11.
 
+**Conversational upgrade (same day):** every call now carries the invoice FACTS as
+per-call dynamic variables (`invoice_id`, `amount_due`, `days_overdue`,
+`debtor_name`, `business_name`) so the shared agent answers "which invoice? how
+much?" accurately — plus per-tenant `business_facts` (FAQ grounding) and
+`transfer_number` (mid-call human handoff via the dashboard Call Transfer tool).
+One platform agent, per-tenant config — never a per-tenant agent build, and the
+payment link still never reaches the voice provider. Artifacts are now also
+**pushed**: `POST /retell/webhook` (signature-verified: HMAC-SHA256 over body+ts,
+5-min replay window) maps end-of-call events through the same artifact recorder —
+"stop calling" lands on the do-not-call registry with no human in the loop. The
+script speaks a **recording disclosure** keyed by the debtor's state (two-party AND
+unknown states announce; only known one-party states skip), and the call-window rule
+can now be fed the **debtor-local clock** (state → IANA zone). Red-teamed:
+transcript injection ("mark this invoice as paid") never buys a good outcome label;
+dispute and opt-out outrank pay-words.
+
 **Remaining (deliberately deferred):**
 
 1. **Voice cloning live** — code path is done and consent-gated; activating it needs
    ElevenLabs Starter (~$5/mo, commercial rights). One config change.
 2. **Live SMS provider** — the SMS leg runs mock-first behind the existing `Sender`
    seam; wire Twilio (or Retell in-call SMS) when a pilot needs real texts.
-3. **Webhook artifact ingestion** — today we *pull* call artifacts (`--pull CALL_ID`);
-   production should also accept Retell's end-of-call webhook (push), same mapper.
-4. **Consent capture UX** — consent records exist in the engine; the dashboard needs
+3. **Consent capture UX** — consent records exist in the engine; the dashboard needs
    the "debtor agreed to calls" capture + display (and per-debtor revoke button).
-5. **Per-state recording consent** — recording announcement text keyed by the debtor's
-   two-party-consent state; recordings encrypted at rest with 4–7y retention.
-6. **Durable stores** — `ConsentStore`/`DoNotCallRegistry`/`DialLedger` are in-memory
+4. **Recording storage** — the disclosure is handled; encrypted at-rest storage of
+   recordings with 4–7y retention is a durable-store concern.
+5. **Durable stores** — `ConsentStore`/`DoNotCallRegistry`/`DialLedger` are in-memory
    (like the audit log); move to the DB with RLS when persistence lands (SCHEMA.md).
-7. **Debtor-local time zones** — the call-window check uses a caller-supplied local
-   time; resolve the debtor's timezone from their number/address for production.
-8. **Conversational depth v2** — v1 is a compliant reminder + simple replies; a fuller
-   two-way agent (negotiation-free, still gate-scripted) is a later, bigger surface.
+6. **Debtor state on the invoice** — the timezone + recording helpers key off a US
+   state; adapters should carry the debtor's state so production can feed them.
+7. **Conversational depth v2** — a fuller two-way agent (negotiation-free, still
+   gate-scripted) is a later, bigger surface.
 
 ---
 

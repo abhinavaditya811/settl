@@ -95,6 +95,15 @@ class Audio:
     # land. Strategy inputs only; the gate still judges every call independently.
     min_days_overdue: int = 30
     min_prior_touches: int = 2
+    # Mid-call human handoff: the vendor's number a live call transfers to when the
+    # debtor disputes / asks for a plan / wants a person. None → no transfer leg.
+    escalation_number: str | None = None
+    # Per-tenant facts the live agent may draw on for simple questions ("how do I
+    # get a copy of the invoice?"). Plain text, injected per call - one shared
+    # platform agent, never a per-tenant agent build. Facts only, never policy.
+    business_facts: str = ""
+    # Whether calls are recorded (drives the spoken recording disclosure).
+    record_calls: bool = False
 
     @property
     def active_voice_id(self) -> str:
