@@ -1,18 +1,10 @@
-// Layout for the authenticated dashboard. Everything under /dashboard gets the
-// demo-mode flag, the engine context (BoardProvider), and the app chrome
-// (Shell - sidebar, toaster). Public pages (landing, /signin) deliberately do
-// NOT mount these, so they neither render the sidebar nor hit the engine API.
-//
-// DemoProvider wraps BoardProvider so the board only fetches once the operator
-// opts into the demo. DashboardGate then shows the zero-state until then.
-//
-// Access is gated at the edge by middleware.ts - a request without a valid
-// session never reaches this layout.
+// Layout for the authenticated dashboard. Access is gated at the edge by
+// middleware.ts — a request without a valid session never reaches this layout.
+// The dashboard page has its own self-contained sidebar and tab navigation,
+// so this layout only provides data-layer context (DemoProvider, BoardProvider).
 
 import DemoProvider from "@/lib/DemoContext";
 import BoardProvider from "@/lib/BoardContext";
-import Shell from "@/components/shell/Shell";
-import DashboardGate from "@/components/dashboard/DashboardGate";
 
 export default function DashboardLayout({
   children,
@@ -22,10 +14,9 @@ export default function DashboardLayout({
   return (
     <DemoProvider>
       <BoardProvider>
-        <Shell>
-          <DashboardGate>{children}</DashboardGate>
-        </Shell>
+        {children}
       </BoardProvider>
     </DemoProvider>
   );
 }
+

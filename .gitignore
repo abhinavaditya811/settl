@@ -37,3 +37,4 @@ logs/
 .idea/
 .vscode/
 *.swp
+.vercel

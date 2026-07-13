@@ -17,5 +17,5 @@ export default withAuth({
 export const config = {
   // Protect the whole dashboard subtree. Public routes (/, /signin) and the
   // /api/auth/* endpoints are intentionally not matched.
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
 };

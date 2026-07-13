@@ -81,7 +81,7 @@ export default function LandingSections() {
         <Closer>
           <Kicker style={{ color: c.accent2 }}>// stop chasing</Kicker>
           <CloseH>Get paid for the work you&apos;ve already done.</CloseH>
-          <CtaBtn onClick={() => (window.location.href = "/preview")}>Open your dashboard</CtaBtn>
+          <CtaBtn onClick={() => (window.location.href = "/signin")}>Open your dashboard</CtaBtn>
         </Closer>
       </Reveal>
 
