@@ -122,6 +122,26 @@ function DecisionsPanel() {
   );
 }
 
+function PlayScript({ text }: { text: string }) {
+  // Preview the call script with the browser's built-in voice (no backend, no
+  // cost). The real call speaks via the engine's TTS provider; this is a preview.
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
+  const toggle = () => {
+    if (playing) { window.speechSynthesis.cancel(); setPlaying(false); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    u.onend = () => setPlaying(false);
+    u.onerror = () => setPlaying(false);
+    window.speechSynthesis.speak(u);
+    setPlaying(true);
+  };
+  return (
+    <Btn onClick={toggle} aria-label={playing ? "Stop the call preview" : "Hear the call script"}>
+      {playing ? "◼ Stop" : "▶ Play"}
+    </Btn>
+  );
+}
+
 function ApprovalsPanel() {
   const theme = useTheme() as AppTheme;
   const fg = theme.status.awaiting_approval.fg, bg = theme.status.awaiting_approval.bg;
@@ -136,9 +156,19 @@ function ApprovalsPanel() {
       </Head>
       {approvals.map((a) => (
         <Row key={a.initials}>
-          <Avatar $fg={fg} $bg={bg}>{a.initials}</Avatar>
-          <div><Line>First message to <b>{a.name}</b></Line><Sub>{a.sub}</Sub></div>
-          <Btn>Review</Btn>
+          <Avatar $fg={fg} $bg={bg}>{a.channel === "voice" ? "📞" : a.initials}</Avatar>
+          <div>
+            <Line>
+              {a.channel === "voice"
+                ? <>First voice call to <b>{a.name}</b></>
+                : <>First message to <b>{a.name}</b></>}
+            </Line>
+            <Sub>{a.sub}</Sub>
+          </div>
+          <span style={{ display: "flex", gap: 8 }}>
+            {a.channel === "voice" && <PlayScript text={a.draft} />}
+            <Btn>Review</Btn>
+          </span>
         </Row>
       ))}
     </Card>

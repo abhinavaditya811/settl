@@ -316,6 +316,35 @@ Frontend: `web/` (Next.js + styled-components)
 data is for logic/demo ONLY - **never screenshot these figures as revenue/customer evidence.**
 Label the demo dashboard as synthetic.
 
+## Voice track - calls as a compliant channel (spec: docs/VOICE_AGENT_SPEC.md)
+**Goal:** the agent can PHONE an overdue B2B customer - same pipeline, same gate, new
+channel. Live-verified 2026-07-11 (a real Retell call, answered). Full status + the
+deferred list live in the spec's §10; the checklist below is the working view.
+
+Engine: `src/settl/voice/`
+
+- [x] `schema` - `Channel.VOICE`; `contact_for` routes voice → `debtor_phone`.
+- [x] `tenancy` - new `audio` slice (default/cloned voice, `ConsentRecord`, `CallWindow`, voice-eligibility knobs). Separate from `voice` (writing persona).
+- [x] `voice/script.py` - disclosure-first call script; URL never spoken (link rides the SMS leg).
+- [x] `compliance` - hard voice rules: `VOICE_NO_DISCLOSURE`, `VOICE_NO_CONSENT`, `VOICE_OUTSIDE_HOURS`, `VOICE_OPTED_OUT` (none waivable); gate is channel-aware, fails safe.
+- [x] `voice/sender.py` + `voice/retell_sender.py` - mock + live senders behind `GatedSender` (escalated script can never dial; link never sent to the voice provider).
+- [x] `voice/provider.py` (+ `system_provider`, `elevenlabs_provider`) - TTS/clone seam: mock / macOS `say` / ElevenLabs.
+- [x] `voice/onboarding.py` - consent-gated clone onboarding (refuses without active consent; revocable).
+- [x] `voice/registry.py` - per-debtor `ConsentStore` + `DoNotCallRegistry` (permanent) + `DialLedger` (never double-dial).
+- [x] `voice/artifact.py` - pull the ended call from Retell; deterministic outcome labels; "stop calling" → do-not-call immediately.
+- [x] `voice/followup.py` - companion SMS leg through the existing `Sender` seam (mock-first).
+- [x] `agents/strategy` - voice as an escalation channel: opt-in, 30d+ overdue, after written touches, phone on file.
+- [x] red-team: adversarial call scripts through the gate (consent can't launder content).
+- [x] dashboard: voice approval card with a script play button (preview surface).
+- [ ] 🔌 voice cloning LIVE - needs ElevenLabs Starter (~$5/mo, commercial rights); code path done.
+- [ ] 🔌 live SMS provider (Twilio) behind the same `Sender` seam.
+- [x] 🔌 Retell end-of-call webhook - `POST /retell/webhook`, signature-verified, same artifact recorder as `--pull`.
+- [x] rich per-call dynamic variables (invoice facts, business name, {{transfer_number}} handoff, per-tenant business_facts).
+- [x] recording disclosure per US state (`voice/recording.py`, conservative) + debtor-local clock (`voice/timezones.py`).
+- [x] red-team transcripts: injection never buys a good outcome; dispute/opt-out outrank pay-words.
+- [ ] consent-capture UX in the dashboard (grant/revoke per debtor) + durable stores (DB + RLS).
+- [ ] adapters carry the debtor's US state so production feeds the timezone + recording helpers automatically.
+
 ## Suggested two-person split
 - **A (orchestration/core):** Week 1 orchestrator, Week 3 judgment+bounds, Week 4 reconcile, Week 6 e2e.
 - **B (AI/IO):** Week 2 drafting, Week 3 gate red-team, Week 5 Agent Engine, GCP setup, contingent adapters.

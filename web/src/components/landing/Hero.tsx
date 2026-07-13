@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import styled, { keyframes } from "styled-components";
-import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform, type Variants } from "framer-motion";
 import { c, glass, tele } from "./palette";
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString();
@@ -66,8 +66,8 @@ const POOL = [
   { id: 5, in: "HF", fg: c.ok, bg: c.okBg, text: "Marked paid — Harbor Freight", tag: "RECOVERED" },
   { id: 6, in: "AM", fg: c.ok, bg: c.okBg, text: "Final notice sent — Atlas Mechanical", tag: "SENT" },
 ];
-const cont = { hidden: {}, show: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } } };
-const item = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 0.7, 0.2, 1] } } };
+const cont: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } } };
+const item: Variants = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 0.7, 0.2, 1] } } };
 
 function Tilt({ children }: { children: React.ReactNode }) {
   const mx = useMotionValue(0), my = useMotionValue(0);

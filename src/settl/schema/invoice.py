@@ -37,6 +37,7 @@ class InvoiceStatus(str, Enum):
 class Channel(str, Enum):
     EMAIL = "email"
     SMS = "sms"
+    VOICE = "voice"  # a phone call; recipient address is the debtor's phone
 
 
 class ContactDirection(str, Enum):
@@ -105,8 +106,8 @@ class Invoice(BaseModel):
         return bool(self.debtor_phone and self.debtor_phone.strip())
 
     def contact_for(self, channel: Channel | None) -> str | None:
-        """Recipient address for a channel: phone for SMS, else email."""
-        if channel is Channel.SMS:
+        """Recipient address for a channel: phone for SMS/VOICE, else email."""
+        if channel in (Channel.SMS, Channel.VOICE):
             return self.debtor_phone
         return self.debtor_email
 

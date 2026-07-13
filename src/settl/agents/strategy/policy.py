@@ -24,6 +24,10 @@ LATE_FEE_MIN_DAYS = 15  # don't tack on a fee on a barely-late invoice
 TOO_SOON_DAYS = 2  # don't re-touch within this many days of the last outbound
 RECENT_WINDOW_DAYS = 7
 RECENT_TOUCH_LIMIT = 3  # >= this many outbound touches in the window → back off
+# Voice is an ESCALATION channel, never a first touch (VOICE_AGENT_SPEC §9.4):
+# only this overdue, and only after written touches (email/SMS) didn't land.
+VOICE_MIN_DAYS_OVERDUE = 30
+VOICE_MIN_PRIOR_TOUCHES = 2
 
 
 class Action(str, Enum):
@@ -52,10 +56,31 @@ class StrategyDecision:
     factors: dict = field(default_factory=dict)
 
 
-def _choose_channel(invoice: Invoice) -> Channel:
+def _voice_eligible(
+    invoice: Invoice, enabled: bool, min_days: int | None, min_touches: int | None
+) -> bool:
+    """Voice fires only as an escalation: tenant opted in, a phone is on file, the
+    invoice is well overdue, and written touches already didn't land. The gate still
+    judges the call itself (consent, disclosure, hours) - this is strategy, not safety."""
+    if not (enabled and invoice.has_phone):
+        return False
+    min_days = VOICE_MIN_DAYS_OVERDUE if min_days is None else min_days
+    min_touches = VOICE_MIN_PRIOR_TOUCHES if min_touches is None else min_touches
+    return (
+        invoice.days_overdue >= min_days
+        and len(invoice.outbound_contacts) >= min_touches
+    )
+
+
+def _choose_channel(invoice: Invoice, *, voice_ok: bool = False) -> Channel:
+    if voice_ok:
+        return Channel.VOICE
     # Prefer the channel of the most recent touch; otherwise infer from contact.
+    # Never inherit VOICE from history - a repeat call must re-qualify above.
     if invoice.prior_contacts:
-        return invoice.prior_contacts[-1].channel
+        last = invoice.prior_contacts[-1].channel
+        if last is not Channel.VOICE:
+            return last
     return Channel.SMS if invoice.has_phone else Channel.EMAIL
 
 
@@ -104,12 +129,16 @@ def decide_strategy(
     *,
     min_days_between_touches: int | None = None,
     allowed_tones: tuple[str, ...] | None = None,
+    voice_enabled: bool = False,
+    voice_min_days_overdue: int | None = None,
+    voice_min_prior_touches: int | None = None,
 ) -> StrategyDecision:
     """Pure policy: Invoice → StrategyDecision (no side effects, no model call).
 
     ``min_days_between_touches`` and ``allowed_tones`` are per-tenant policy inputs;
     both default to the module thresholds / no clamp so an un-configured call is
-    unchanged."""
+    unchanged. The ``voice_*`` inputs come from the tenant's ``audio`` slice: voice
+    is opt-in and OFF by default, so nothing changes for an un-configured tenant."""
     factors = {
         "days_overdue": invoice.days_overdue,
         "status": invoice.status.value,
@@ -179,15 +208,23 @@ def decide_strategy(
     ask = _ASK[tone]
 
     include_fee = invoice.late_fee_allowed and days >= LATE_FEE_MIN_DAYS
+    voice_ok = _voice_eligible(
+        invoice, voice_enabled, voice_min_days_overdue, voice_min_prior_touches
+    )
     reasoning = (
         f"{days}d overdue, B2B, status={invoice.status.value} → {tone.value}; "
         f"late fee {'applied' if include_fee else 'not applied'} "
         f"(allowed={invoice.late_fee_allowed})."
     )
+    if voice_ok:
+        reasoning += (
+            f" Escalating to a voice call: {len(invoice.outbound_contacts)} written "
+            "touches didn't land and a phone is on file."
+        )
     return StrategyDecision(
         action=Action.CHASE,
         reasoning=reasoning,
-        channel=_choose_channel(invoice),
+        channel=_choose_channel(invoice, voice_ok=voice_ok),
         tone=tone,
         include_late_fee=include_fee,
         the_ask=ask,

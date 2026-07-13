@@ -20,9 +20,9 @@ from enum import Enum
 
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import rules
-from settl.compliance.rules import RuleViolation
+from settl.compliance.rules import RuleViolation, VoiceContext
 from settl.governance import RuleStore, guardrail_violations, waived_codes
-from settl.schema.invoice import Invoice
+from settl.schema.invoice import Channel, Invoice
 
 # Run order is just for readable reasoning; all violations are collected.
 # rule_contact_frequency is run separately (it takes per-tenant policy bounds).
@@ -81,7 +81,12 @@ class ComplianceGate:
         self._rules_store = rules_store
 
     def evaluate(
-        self, invoice: Invoice, message: str | None = None
+        self,
+        invoice: Invoice,
+        message: str | None = None,
+        *,
+        channel: Channel | None = None,
+        voice: VoiceContext | None = None,
     ) -> ComplianceResult:
         violations: list[RuleViolation] = []
         for rule in _INVOICE_RULES:
@@ -94,6 +99,17 @@ class ComplianceGate:
         if message is not None:
             for mrule in _MESSAGE_RULES:
                 violations.extend(mrule(message))
+
+        # Voice-channel rules run ONLY on a voice send (§3a). They're additive and
+        # tightening - email/SMS are untouched. A missing VoiceContext is treated as
+        # "no consent / nothing proven" (a default context), so voice fails safe.
+        if channel is Channel.VOICE:
+            vctx = voice or VoiceContext()
+            if message is not None:
+                violations.extend(rules.rule_voice_disclosure(message))
+            violations.extend(rules.rule_voice_consent(vctx))
+            violations.extend(rules.rule_voice_call_window(vctx))
+            violations.extend(rules.rule_voice_opt_out(invoice, vctx))
 
         # Operator guardrails: add any tightening escalations, then drop soft-rule
         # violations the operator explicitly waived (hard codes are never in the set).
@@ -122,5 +138,6 @@ class ComplianceGate:
                 violation_codes=result.codes,
                 message_checked=message is not None,
                 waived_codes=sorted(waived),
+                channel=(channel.value if channel else None),
             )
         return result

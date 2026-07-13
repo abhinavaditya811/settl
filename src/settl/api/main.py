@@ -15,6 +15,7 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /guardrails                the stored operator guardrails
     POST /check-payments            poll Stripe + auto-reconcile paid links
     POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
+    POST /retell/webhook            Retell end-of-call events → call artifact + opt-out
     POST /refresh                   re-run the board over the dataset
 
 CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
@@ -49,6 +50,8 @@ from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
+from settl.voice.registry import DoNotCallRegistry
+from settl.voice.webhook import ingest_retell_webhook
 
 # Where the execution-log JSONL is written. Defaults to the repo's runs/ dir for
 # local dev; override with SETTL_RUNS_DIR on hosts with a read-only or
@@ -71,6 +74,9 @@ app.add_middleware(
 )
 
 state = BoardState(log_path=_RUNS / "dashboard.jsonl")
+# Voice-safety state the Retell webhook writes to. Per-process like BoardState;
+# moves to the durable store with everything else (VOICE_AGENT_SPEC §10).
+voice_do_not_call = DoNotCallRegistry()
 
 
 # -- projectors ---------------------------------------------------------------
@@ -226,6 +232,24 @@ async def stripe_webhook(request: Request) -> WebhookAck:
     sig = request.headers.get("stripe-signature")
     changed = state.ingest_webhook(payload, sig)
     return WebhookAck(received=True, changed=changed)
+
+
+@app.post("/retell/webhook", response_model=WebhookAck)
+async def retell_webhook(request: Request) -> WebhookAck:
+    """Retell → end-of-call events (transcript, outcome). Signature-verified, then
+    mapped to a CallArtifact on the execution log; a "stop calling" outcome lands on
+    the do-not-call registry immediately. Thin projector: verification + mapping live
+    in voice/webhook.py; an unverified or irrelevant event is acknowledged and
+    dropped (never guessed). Writes to the board's own log (``state._log`` - the
+    module-private handle, used here to keep artifacts in the activity feed)."""
+    payload = await request.body()
+    sig = request.headers.get("x-retell-signature")
+    artifact = ingest_retell_webhook(
+        payload, sig, log=state._log, do_not_call=voice_do_not_call
+    )
+    return WebhookAck(
+        received=True, changed=[artifact.invoice_id] if artifact else []
+    )
 
 
 @app.post("/refresh", response_model=BoardResponse)

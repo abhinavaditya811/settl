@@ -19,6 +19,9 @@ class StrategyAgent:
         *,
         min_days_between_touches: int | None = None,
         allowed_tones: tuple[str, ...] | None = None,
+        voice_enabled: bool = False,
+        voice_min_days_overdue: int | None = None,
+        voice_min_prior_touches: int | None = None,
         rules_store: RuleStore | None = None,
     ) -> None:
         self._log = log
@@ -29,6 +32,10 @@ class StrategyAgent:
         # Per-tenant policy inputs (from TenantConfig.policy); None → module defaults.
         self._min_days_between_touches = min_days_between_touches
         self._allowed_tones = allowed_tones
+        # Voice-channel eligibility (from TenantConfig.audio); off by default.
+        self._voice_enabled = voice_enabled
+        self._voice_min_days_overdue = voice_min_days_overdue
+        self._voice_min_prior_touches = voice_min_prior_touches
         # Operator guardrails: applied AFTER the clamp, downgrade-only (CHASE→HOLD/SKIP
         # or a gentler tone). They can never raise an action toward a send.
         self._rules_store = rules_store
@@ -38,6 +45,9 @@ class StrategyAgent:
             invoice,
             min_days_between_touches=self._min_days_between_touches,
             allowed_tones=self._allowed_tones,
+            voice_enabled=self._voice_enabled,
+            voice_min_days_overdue=self._voice_min_days_overdue,
+            voice_min_prior_touches=self._voice_min_prior_touches,
         )
         decision = self._model.refine(invoice, decision)
         decision = tighten_strategy(invoice, decision, self._rules_store)

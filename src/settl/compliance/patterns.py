@@ -82,11 +82,47 @@ INBOUND_PAYMENT_PLAN = [
     r"\bspread (out )?the payment",
 ]
 
+# An opt-out / do-not-call request (spoken on a call or written in a reply). Honoring
+# it is immediate and permanent (VOICE_AGENT_SPEC §3a.8) - the registry records it and
+# the gate refuses any later dial.
+INBOUND_OPT_OUT = [
+    r"\bstop calling\b",
+    r"\bdo ?n[o']t call\b",
+    r"\bnever call\b",
+    r"\bno more calls\b",
+    r"\bremove (me|us|this number)\b",
+    r"\btake (me|us) off\b",
+    r"\bunsubscribe\b",
+    r"\bstop contacting\b",
+]
+
+# Pay-intent signals in a call transcript - used only to LABEL an outcome for the
+# audit trail (never to auto-negotiate; the agent still just texts the link).
+PAY_INTENT = [
+    r"\bi('| wi)ll pay\b",
+    r"\bwill (send|make) (the )?payment\b",
+    r"\bpay(ing)? (it |that )?(today|tomorrow|this week|right away|now)\b",
+    r"\bsend (me )?the link\b",
+    r"\btext (me )?the link\b",
+    r"\bgoing to pay\b",
+]
+
 # A real URL in a draft. The model must never mint one - only the {{payment_link}}
 # placeholder is allowed, resolved by the sender after the gate (non-custodial).
 URL = [
     r"https?://\S+",
     r"\bwww\.\S+",
+]
+
+# AI-voice disclosure (VOICE_AGENT_SPEC §3a.1): a voice call MUST open by clearly
+# stating it is an AI/automated voice - for BOTH the default and cloned voice. The
+# gate looks for one of these near the top of the spoken script; absence escalates.
+AI_DISCLOSURE = [
+    r"\ba\.?\s?i\.?[- ]?(assistant|voice|agent|generated|automated)\b",
+    r"\bartificial(ly)?[- ]?(intelligence|generated)?[- ]?voice\b",
+    r"\bautomated (call|voice|assistant|message|system)\b",
+    r"\bpre-?recorded\b",
+    r"\bthis (call )?is (an?|being) (ai|a\.?i\.?|automated|artificial|recorded)\b",
 ]
 
 
@@ -111,4 +147,7 @@ LEGAL_ADVICE_RE = _compile(LEGAL_ADVICE)
 TONE_BREACH_RE = _compile(TONE_BREACH)
 INBOUND_DISPUTE_RE = _compile(INBOUND_DISPUTE)
 INBOUND_PAYMENT_PLAN_RE = _compile(INBOUND_PAYMENT_PLAN)
+INBOUND_OPT_OUT_RE = _compile(INBOUND_OPT_OUT)
+PAY_INTENT_RE = _compile(PAY_INTENT)
 URL_RE = _compile(URL)
+AI_DISCLOSURE_RE = _compile(AI_DISCLOSURE)
