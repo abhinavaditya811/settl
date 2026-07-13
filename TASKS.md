@@ -237,10 +237,13 @@ the compliance gate still clears every send, agents still read only canonical `I
   stored tokens, which must cancel any scheduled autonomous sends - see FR-8); **delete account
   + data** (all invoices, tokens, and audit rows for that user).
 
-### Multi-tenancy & persistence (Neon Postgres)
+### Multi-tenancy & persistence (Supabase Postgres)
 - **FR-5 - Durable, per-user state.** Replace the current in-memory per-process `BoardState`
-  with a **Neon Postgres** store: `users`, `invoices`, `oauth_tokens`, `audit_log` (+ Auth.js
-  session tables). Survives restart; supports multiple users.
+  with a **Supabase Postgres** store. Schema landed in `supabase/migrations/`: `tenants`,
+  `invoices`, `contacts`, `tenant_config`, `oauth_tokens`, `operator_rules`, `execution_log`,
+  `payment_events` - RLS-locked (defense-in-depth), FastAPI connects as the service role and
+  scopes every query by `tenant_id`. Still open: point `settl/data`/`state.py` at these tables
+  instead of the synthetic JSON fixture. Survives restart; supports multiple users.
 - **FR-6 - Hard tenant isolation.** Every invoice, draft, audit entry, and metric is scoped to
   its owning `user_id`; **a user can never read or act on another user's data.** Enforce at the
   query layer (and consider Postgres RLS as defence-in-depth). The audit log is per-user.

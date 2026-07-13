@@ -14,6 +14,7 @@ import OverviewPanels from "@/components/overview/OverviewPanels";
 import ApprovalsView from "@/components/overview/ApprovalsView";
 import InvoicesView from "@/components/overview/InvoicesView";
 import ActivityView from "@/components/overview/ActivityView";
+import ZeroState from "@/components/zero/ZeroState";
 
 type Tab = "overview" | "approvals" | "invoices" | "activity";
 const TABS: { key: Tab; label: string; badge?: number }[] = [
@@ -95,7 +96,7 @@ export default function DashboardPage() {
   const [mode, setMode] = useState<ThemeMode>("dark");
   const [tab, setTab] = useState<Tab>("overview");
   const theme = mode === "dark" ? darkTheme : lightTheme;
-  const { demoEnabled, exitDemo } = useDemo();
+  const { demoEnabled, ready, exitDemo } = useDemo();
   const { data: session } = useSession();
 
   // Deep-linkable tabs: /dashboard#invoices opens straight to Invoices (handy for
@@ -111,6 +112,18 @@ export default function DashboardPage() {
   }, []);
   const go = (k: Tab) => { setTab(k); if (typeof window !== "undefined") window.location.hash = k; };
 
+  // Exiting the demo drops the operator back on the zero-state - reset the tab
+  // so re-entering the demo later starts fresh at Overview.
+  const handleExitDemo = () => {
+    exitDemo();
+    setTab("overview");
+    if (typeof window !== "undefined") window.location.hash = "";
+  };
+
+  // Wait for localStorage to be read so a returning demo user does not flash
+  // the zero-state before the board appears.
+  if (!ready) return null;
+
   return (
     <ThemeProvider theme={theme}>
       <Shell>
@@ -121,18 +134,19 @@ export default function DashboardPage() {
             </span>
             <span className="name">Settl</span>
           </Brand>
-          {TABS.map((t) => (
-            <Nav key={t.key} $on={tab === t.key} onClick={() => go(t.key)}>
-              {t.label}
-              {t.badge && <span className="badge">{t.badge}</span>}
-            </Nav>
-          ))}
+          {demoEnabled &&
+            TABS.map((t) => (
+              <Nav key={t.key} $on={tab === t.key} onClick={() => go(t.key)}>
+                {t.label}
+                {t.badge && <span className="badge">{t.badge}</span>}
+              </Nav>
+            ))}
           <SideSpacer />
           <SideFooter>
             {demoEnabled && (
               <DemoTag>
                 <span>Demo data</span>
-                <button onClick={exitDemo}>Exit</button>
+                <button onClick={handleExitDemo}>Exit</button>
               </DemoTag>
             )}
             {session?.user && (
@@ -146,19 +160,25 @@ export default function DashboardPage() {
           </SideFooter>
         </Side>
         <Main>
-          <Top>
-            <span className="ws">{hero.workspace}</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <span className="scale">{hero.invoices} invoices · {hero.customers} customers</span>
-              <Toggle onClick={() => setMode((m) => (m === "dark" ? "light" : "dark"))}>
-                {mode === "dark" ? "Light" : "Dark"}
-              </Toggle>
-            </div>
-          </Top>
-          {tab === "overview" && (<><HeroPanel /><OverviewPanels /></>)}
-          {tab === "approvals" && <ApprovalsView />}
-          {tab === "invoices" && <InvoicesView />}
-          {tab === "activity" && <ActivityView />}
+          {!demoEnabled ? (
+            <ZeroState />
+          ) : (
+            <>
+              <Top>
+                <span className="ws">{hero.workspace}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <span className="scale">{hero.invoices} invoices · {hero.customers} customers</span>
+                  <Toggle onClick={() => setMode((m) => (m === "dark" ? "light" : "dark"))}>
+                    {mode === "dark" ? "Light" : "Dark"}
+                  </Toggle>
+                </div>
+              </Top>
+              {tab === "overview" && (<><HeroPanel /><OverviewPanels /></>)}
+              {tab === "approvals" && <ApprovalsView />}
+              {tab === "invoices" && <InvoicesView />}
+              {tab === "activity" && <ActivityView />}
+            </>
+          )}
         </Main>
       </Shell>
     </ThemeProvider>

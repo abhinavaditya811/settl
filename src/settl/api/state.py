@@ -34,6 +34,7 @@ from settl.audit import AgentEngineSink, ExecutionLog, agent_engine_enabled
 from settl.compliance.rules import WAIVABLE_CODES
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
+from settl.data import supabase as db
 from settl.api.metrics import compute_metrics
 from settl.governance import Directive, OperatorRule, RuleStore, Scope
 from settl.orchestrator import Orchestrator, TerminalState
@@ -68,11 +69,18 @@ class BoardState:
         # Operator guardrails (human-in-the-loop), shared by reference into both
         # orchestrators so a flag is honored on re-orchestration and every future run.
         self._rules = RuleStore()
+        self._invoices: dict[str, Invoice] = {}
+        if db.supabase_enabled():
+            # Durable mirror of every decision (Postgres survives a restart; the
+            # in-memory list ExecutionLog.clear()s on refresh stays the dashboard's
+            # live view - see PostgresLogSink's docstring).
+            self._log.add_sink(db.PostgresLogSink(tenant_of=self._tenant_of))
+            for rule in db.load_rules():
+                self._rules.add(rule)
         self._board = Orchestrator(
             log=self._log, sender=sender, drafter=drafter, rules_store=self._rules
         )
         self._approver = Orchestrator(log=self._log, sender=sender, rules_store=self._rules)
-        self._invoices: dict[str, Invoice] = {}
         self._results: dict[str, PipelineResult] = {}
         # Append-only money-event log per invoice; poll AND webhook write here and
         # reconcile always re-derives over the full log (so refunds/disputes reverse).
@@ -148,6 +156,13 @@ class BoardState:
                 out.append(inv)
         return out
 
+    def _tenant_of(self, invoice_id: str) -> str | None:
+        """The invoice's tenant, or None if unknown - execution-log entries and
+        payment events are attributed to a tenant this way (they carry no tenant
+        of their own; see PostgresLogSink's docstring)."""
+        inv = self._invoices.get(invoice_id)
+        return inv.tenant_id if inv else None
+
     # -- queries --------------------------------------------------------------
 
     def refresh(self) -> None:
@@ -156,9 +171,16 @@ class BoardState:
         self._reconcile_sig.clear()
         self._link_to_invoice.clear()
         self._pi_to_invoice.clear()
-        invoices = self._enrich_payment_links(load_synthetic_invoices())
+        loader = db.load_invoices if db.supabase_enabled() else load_synthetic_invoices
+        invoices = self._enrich_payment_links(loader())
         self._invoices = {inv.invoice_id: inv for inv in invoices}
         self._results = {r.invoice_id: r for r in self._board.run_batch(invoices)}
+        if db.supabase_enabled():
+            # Replay persisted payment events so reconcile state (RECOVERED/PARTIAL/
+            # escalated) survives a restart instead of resetting until the next poll.
+            self._events = db.load_events()
+            for invoice_id in list(self._events):
+                self._apply_reconcile(invoice_id)
 
     def results(self) -> list[tuple[Invoice, PipelineResult]]:
         return [(self._invoices[i], r) for i, r in self._results.items()]
@@ -245,6 +267,8 @@ class BoardState:
             reason=reason,
             created_at=date.today().isoformat(),
         ))
+        if db.supabase_enabled():
+            db.insert_rule(invoice.tenant_id, rule)
         self._log.record(
             invoice_id=invoice_id, agent="operator_flag", decision="guardrail_stored",
             reasoning=f"{rule.rule_id}: {directive_e.value} ({scope_e.value}) - {reason or 'no reason given'}",
@@ -346,6 +370,10 @@ class BoardState:
     def _record_event(self, event: PaymentEvent) -> None:
         """Append a money event, upserting by (kind, reference) so a re-poll or a
         cumulative refund replaces the prior value rather than stacking duplicates."""
+        if db.supabase_enabled():
+            tenant_id = self._tenant_of(event.invoice_id)
+            if tenant_id:
+                db.upsert_event(tenant_id, event)
         log = self._events.setdefault(event.invoice_id, [])
         if event.reference:
             for i, existing in enumerate(log):

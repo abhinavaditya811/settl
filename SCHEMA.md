@@ -5,10 +5,13 @@
 > shape; this file holds the full schema - the new multi-tenant tables, the
 > payment-link resolution chain, and the persistence/isolation rules they imply.
 >
-> **Status: design.** None of this weakens an existing invariant (agents still read
-> only canonical `Invoice`; the compliance gate still clears every send). It is a
-> migration from the current in-memory `frozen` model and lands with the contingent
-> adapters + the FR-5 persistence work (see `TASKS.md`).
+> **Status: schema landed, engine wiring pending.** Tables below are live as Supabase
+> Postgres migrations (`supabase/migrations/`) with RLS enabled (defense-in-depth;
+> the FastAPI engine connects as the service role and enforces tenant_id at the query
+> layer as the primary isolation mechanism). None of this weakens an existing
+> invariant (agents still read only canonical `Invoice`; the compliance gate still
+> clears every send). `BoardState`/`state.py` still reads the in-memory synthetic
+> model until the adapter swap (FR-5, see `TASKS.md`) points it at these tables.
 
 ---
 
