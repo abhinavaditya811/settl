@@ -9,7 +9,7 @@ dist/
 # --- Virtualenv ---
 .venv/
 venv/
-env/
+*env/
 
 # --- Testing / tooling caches ---
 .pytest_cache/
