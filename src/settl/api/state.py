@@ -21,6 +21,8 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
+from settl.adapters.csv_adapter import CsvImportResult, parse_csv
+from settl.adapters.manual_entry import ManualInvoiceInput, build_manual_invoice
 from settl.agents.reconcile import (
     OperatorNotifier,
     PaymentEvent,
@@ -138,6 +140,10 @@ class BoardState:
     def stripe_enabled(self) -> bool:
         return self._minter is not None
 
+    @property
+    def supabase_enabled(self) -> bool:
+        return db.supabase_enabled()
+
     def _enrich_payment_links(self, invoices: list[Invoice]) -> list[Invoice]:
         """For the demo, mint a real (test-mode) Stripe link per invoice so the board,
         drawer, and email all carry a payable link. Minting is cached per invoice and
@@ -182,8 +188,14 @@ class BoardState:
             for invoice_id in list(self._events):
                 self._apply_reconcile(invoice_id)
 
-    def results(self) -> list[tuple[Invoice, PipelineResult]]:
-        return [(self._invoices[i], r) for i, r in self._results.items()]
+    def results(
+        self, tenant_ids: frozenset[str] | None = None
+    ) -> list[tuple[Invoice, PipelineResult]]:
+        return [
+            (self._invoices[i], r)
+            for i, r in self._results.items()
+            if tenant_ids is None or self._invoices[i].tenant_id in tenant_ids
+        ]
 
     def get(self, invoice_id: str) -> tuple[Invoice, PipelineResult] | None:
         if invoice_id not in self._results:
@@ -193,19 +205,31 @@ class BoardState:
     def trace(self, invoice_id: str):
         return self._log.for_invoice(invoice_id)
 
-    def counts(self) -> dict[str, int]:
+    def counts(self, tenant_ids: frozenset[str] | None = None) -> dict[str, int]:
         out: dict[str, int] = {}
-        for r in self._results.values():
+        for i, r in self._results.items():
+            if tenant_ids is not None and self._invoices[i].tenant_id not in tenant_ids:
+                continue
             out[r.terminal_state.value] = out.get(r.terminal_state.value, 0) + 1
         return out
 
-    def activity(self, limit: int = 50) -> list:
-        """Most-recent-first slice of the execution log across all invoices."""
-        return list(reversed(self._log.entries))[:limit]
+    def activity(self, limit: int = 50, tenant_ids: frozenset[str] | None = None) -> list:
+        """Most-recent-first slice of the execution log, optionally scoped to a tenant
+        set. Filtered before the limit is applied, so a scoped caller still gets up to
+        `limit` of ITS OWN entries rather than a limit-then-filter shortfall."""
+        entries = reversed(self._log.entries)
+        if tenant_ids is not None:
+            entries = (e for e in entries if self._tenant_of(e.invoice_id) in tenant_ids)
+        out = []
+        for e in entries:
+            if len(out) >= limit:
+                break
+            out.append(e)
+        return out
 
-    def metrics(self) -> dict:
+    def metrics(self, tenant_ids: frozenset[str] | None = None) -> dict:
         """Money + aging aggregates for the dashboard overview (see api/metrics.py)."""
-        return compute_metrics(self.results())
+        return compute_metrics(self.results(tenant_ids))
 
     # -- actions --------------------------------------------------------------
 
@@ -263,6 +287,7 @@ class BoardState:
             scope=scope_e,
             directive=directive_e,
             criteria=criteria or {"debtor_name": invoice.debtor_name},
+            tenant_id=invoice.tenant_id,
             waive_code=waive_code,
             reason=reason,
             created_at=date.today().isoformat(),
@@ -290,7 +315,7 @@ class BoardState:
             "note": note,
         }
 
-    def guardrails(self) -> list[dict]:
+    def guardrails(self, tenant_ids: frozenset[str] | None = None) -> list[dict]:
         """Project the stored operator guardrails for the dashboard."""
         return [
             {
@@ -303,7 +328,25 @@ class BoardState:
                 "created_at": r.created_at,
             }
             for r in self._rules.all()
+            if tenant_ids is None or r.tenant_id in tenant_ids
         ]
+
+    def import_csv(self, tenant_id: str, csv_text: str) -> CsvImportResult:
+        """Parse, persist, and reflect a CSV upload on the board. Raises
+        CsvFormatError (400 at the route) if the file itself is unusable; a per-row
+        reject is returned in the result instead, never raised."""
+        result = parse_csv(csv_text, tenant_id)
+        if result.invoices:
+            db.insert_invoices(result.invoices)
+            self.refresh()
+        return result
+
+    def add_manual_invoice(self, tenant_id: str, payload: ManualInvoiceInput) -> Invoice:
+        """Build, persist, and reflect one manually-entered invoice on the board."""
+        invoice = build_manual_invoice(tenant_id, payload)
+        db.insert_invoices([invoice])
+        self.refresh()
+        return invoice
 
     def check_payments(self) -> list[str]:
         """Poll Stripe for paid links and auto-reconcile: record the fee, notify, flip the

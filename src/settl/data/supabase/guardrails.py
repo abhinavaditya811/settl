@@ -3,8 +3,8 @@
 RuleStore itself stays pure in-memory (it only holds and matches rules - see its
 docstring); persistence is bolted on beside it here, the same seam BoardState
 already uses for every other durable side effect. tenant_id is attributed from
-the invoice the flag was raised on - guardrails have no independent notion of
-tenant today, since the demo board itself isn't scoped to one signed-in user yet.
+the invoice the flag was raised on, and round-trips through OperatorRule.tenant_id
+so RuleStore.matching() can enforce a rule never steers another tenant's invoice.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from settl.data.supabase.connection import connect, to_jsonb
 from settl.governance import Directive, OperatorRule, Scope
 
 _SELECT_SQL = """
-    select rule_id, scope, directive, criteria, waive_code, reason, factors, created_at
+    select rule_id, tenant_id, scope, directive, criteria, waive_code, reason, factors, created_at
     from operator_rules
     order by created_at
 """
@@ -36,6 +36,7 @@ def load_rules() -> list[OperatorRule]:
             directive=Directive(r["directive"]),
             criteria=r["criteria"] or {},
             rule_id=r["rule_id"],
+            tenant_id=r["tenant_id"],
             waive_code=r["waive_code"],
             reason=r["reason"] or "",
             created_at=r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),

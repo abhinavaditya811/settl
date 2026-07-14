@@ -47,6 +47,7 @@ class OperatorRule:
     directive: Directive
     criteria: dict
     rule_id: str = ""
+    tenant_id: str = ""  # the invoice's tenant when flagged - never applies cross-tenant
     waive_code: str | None = None  # for Directive.WAIVE
     reason: str = ""
     created_at: str = ""
@@ -70,8 +71,13 @@ def _attr(invoice: Invoice, key: str):
 
 def matches(rule: OperatorRule, invoice: Invoice) -> bool:
     """True when every criterion holds for this invoice. Empty criteria → False (a
-    guardrail must be scoped; it never silently applies to everything)."""
+    guardrail must be scoped; it never silently applies to everything). A rule never
+    matches an invoice outside the tenant it was flagged on - a shared BoardState must
+    not let one tenant's guardrail steer another tenant's invoice (e.g. matching
+    debtor_name)."""
     if not rule.criteria:
+        return False
+    if rule.tenant_id != invoice.tenant_id:
         return False
     for key, expected in rule.criteria.items():
         if key == "days_overdue_gte":

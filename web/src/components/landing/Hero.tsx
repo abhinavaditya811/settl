@@ -101,7 +101,7 @@ export default function HeroSection() {
       <Nav initial={{ opacity: 0, y: -14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.7, 0.2, 1] }}>
         <div className="brand"><span className="logo" aria-hidden="true">S</span><span className="name">Settl</span></div>
         <div className="links"><span className="lk">How it works</span><span className="lk">Console</span><span className="lk">Safety</span><span className="lk">Pricing</span></div>
-        <div className="actions"><Cta onClick={() => (window.location.href = "/signin")}>Watch demo</Cta><Cta $primary onClick={() => (window.location.href = "/signin")}>Open dashboard</Cta></div>
+        <div className="actions"><Cta onClick={() => (window.location.href = "/demo")}>Watch demo</Cta><Cta $primary onClick={() => (window.location.href = "/signin")}>Open dashboard</Cta></div>
       </Nav>
 
       <Hero>
@@ -116,7 +116,7 @@ export default function HeroSection() {
               <Chip><b>0</b><span>unsafe messages, ever</span></Chip>
             </Metrics>
           </motion.div>
-          <motion.div variants={item}><Row><Cta $primary onClick={() => (window.location.href = "/signin")}>Open your dashboard</Cta><Cta onClick={() => (window.location.href = "/signin")}>See it work →</Cta></Row></motion.div>
+          <motion.div variants={item}><Row><Cta $primary onClick={() => (window.location.href = "/signin")}>Open your dashboard</Cta><Cta onClick={() => (window.location.href = "/demo")}>See it work →</Cta></Row></motion.div>
           <motion.div variants={item}><Trust>B2B only · never custodial · paid through your own processor</Trust></motion.div>
         </motion.div>
 

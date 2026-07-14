@@ -1,12 +1,16 @@
 "use client";
 
-// Post-login zero-state. Shown across the dashboard until the operator either
-// adds their own invoices (CSV upload - a later branch) or opts into the
-// synthetic demo board. Guides the onboarding path (FR-15/FR-16).
+// Post-login zero-state. Shown until the operator adds their own invoices (CSV
+// upload / manual entry). Demo data lives at the separate, public /demo route -
+// not a toggle here - so there is no path back to synthetic data from this
+// screen. Guides the onboarding path (FR-15/FR-16).
 
+import { useState } from "react";
+import Link from "next/link";
 import styled from "styled-components";
 import { useSession } from "next-auth/react";
-import { useDemo } from "@/lib/DemoContext";
+import UploadCsvModal from "./UploadCsvModal";
+import ManualEntryModal from "./ManualEntryModal";
 
 const STEPS = [
   { label: "Connect Google", done: true },
@@ -14,10 +18,16 @@ const STEPS = [
   { label: "Watch the agent recover them", done: false },
 ];
 
-export default function ZeroState() {
+interface Props {
+  // Called once real data has landed - the parent re-probes and, once it finds
+  // at least one invoice, swaps out of the zero-state into the "mine" board.
+  onOwnDataAdded: () => void;
+}
+
+export default function ZeroState({ onOwnDataAdded }: Props) {
   const { data: session } = useSession();
-  const { enableDemo } = useDemo();
   const email = session?.user?.email;
+  const [modal, setModal] = useState<"csv" | "manual" | null>(null);
 
   return (
     <Wrap>
@@ -40,30 +50,49 @@ export default function ZeroState() {
       </Steps>
 
       <Options>
-        <Option>
+        <Option $primary>
           <h3>Add your invoices</h3>
           <p>
-            Upload a CSV export from your invoicing tool. The agent runs on your
-            real overdue accounts.
+            Upload a CSV export from your invoicing tool, or add one by hand. The
+            agent runs on your real overdue accounts.
           </p>
-          <Cta as="button" disabled>
-            Upload CSV
-          </Cta>
-          <Soon>Coming soon</Soon>
-        </Option>
-
-        <Option $primary>
-          <h3>Explore the demo</h3>
-          <p>
-            See the full engine work end-to-end on a set of synthetic invoices,
-            including drafts held for your approval.
-          </p>
-          <Cta as="button" $primary onClick={enableDemo}>
-            Show me the demo
-          </Cta>
-          <Soon>Synthetic data - no real money figures</Soon>
+          <CtaRow>
+            <Cta as="button" $primary onClick={() => setModal("csv")}>
+              Upload CSV
+            </Cta>
+            <Cta as="button" onClick={() => setModal("manual")}>
+              Enter manually
+            </Cta>
+          </CtaRow>
+          <Soon>PDF / photo upload - coming soon</Soon>
         </Option>
       </Options>
+
+      <DemoLink>
+        Want to see it in action first?{" "}
+        <Link href="/demo" target="_blank" rel="noopener noreferrer">
+          View the demo &rarr;
+        </Link>
+      </DemoLink>
+
+      {modal === "csv" && (
+        <UploadCsvModal
+          onClose={() => setModal(null)}
+          onImported={() => {
+            setModal(null);
+            onOwnDataAdded();
+          }}
+        />
+      )}
+      {modal === "manual" && (
+        <ManualEntryModal
+          onClose={() => setModal(null)}
+          onAdded={() => {
+            setModal(null);
+            onOwnDataAdded();
+          }}
+        />
+      )}
     </Wrap>
   );
 }
@@ -123,10 +152,18 @@ const Step = styled.li<{ $done: boolean }>`
 
 const Options = styled.div`
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 16px;
-  @media (max-width: 640px) {
-    grid-template-columns: 1fr;
+`;
+
+const DemoLink = styled.p`
+  margin: 0;
+  font-size: 13.5px;
+  color: ${({ theme }) => theme.textMuted};
+  text-align: center;
+  a {
+    font-weight: 700;
+    text-decoration: underline;
   }
 `;
 
@@ -151,6 +188,12 @@ const Option = styled.div<{ $primary?: boolean }>`
     line-height: 1.55;
     color: ${({ theme }) => theme.textMuted};
   }
+`;
+
+const CtaRow = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 `;
 
 const Cta = styled.span<{ $primary?: boolean }>`

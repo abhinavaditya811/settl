@@ -7,13 +7,21 @@ import type {
   ApproveResponse,
   BoardResponse,
   CheckPaymentsResponse,
+  CsvImportResponse,
   FlagRequest,
   FlagResponse,
   GuardrailView,
   InvoiceDetail,
+  ManualEntryResponse,
+  ManualInvoiceBody,
   Metrics,
   TraceEntry,
 } from "./types";
+
+// Which board a fetch reads: the shared synthetic demo tenants, or the signed-in
+// operator's own tenant (Phase 1, FR-6). Threaded through as ?view= on every
+// engine-backed route so the Next.js proxy knows which identity headers to attach.
+export type BoardMode = "demo" | "mine";
 
 async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, cache: "no-store" });
@@ -30,11 +38,14 @@ async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export const getBoard = () => getJSON<BoardResponse>("/api/invoices");
+export const getBoard = (mode: BoardMode = "demo") =>
+  getJSON<BoardResponse>(`/api/invoices?view=${mode}`);
 
-export const getMetrics = () => getJSON<Metrics>("/api/metrics");
+export const getMetrics = (mode: BoardMode = "demo") =>
+  getJSON<Metrics>(`/api/metrics?view=${mode}`);
 
-export const getActivity = () => getJSON<ActivityEntry[]>("/api/activity");
+export const getActivity = (mode: BoardMode = "demo") =>
+  getJSON<ActivityEntry[]>(`/api/activity?view=${mode}`);
 
 export const getDetail = (id: string) =>
   getJSON<InvoiceDetail>(`/api/invoices/${id}`);
@@ -42,8 +53,8 @@ export const getDetail = (id: string) =>
 export const getTrace = (id: string) =>
   getJSON<TraceEntry[]>(`/api/invoices/${id}/trace`);
 
-export const refreshBoard = () =>
-  getJSON<BoardResponse>("/api/refresh", { method: "POST" });
+export const refreshBoard = (mode: BoardMode = "demo") =>
+  getJSON<BoardResponse>(`/api/refresh?view=${mode}`, { method: "POST" });
 
 // Approve a held draft. Pass `message` to send a human-edited version (the engine
 // re-runs it through the compliance gate before sending).
@@ -68,4 +79,22 @@ export const flagDecision = (id: string, body: FlagRequest) =>
   });
 
 // The stored operator guardrails (active human-in-the-loop rules).
-export const getGuardrails = () => getJSON<GuardrailView[]>("/api/guardrails");
+export const getGuardrails = (mode: BoardMode = "demo") =>
+  getJSON<GuardrailView[]>(`/api/guardrails?view=${mode}`);
+
+// Upload a CSV of the operator's own invoices. Always scoped to "mine" - there is
+// no demo variant of adding your own data (see the /api/invoices/import route).
+export const uploadCsv = (csv: string) =>
+  getJSON<CsvImportResponse>("/api/invoices/import", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ csv }),
+  });
+
+// Add one invoice by hand. Same "always mine" scoping as uploadCsv.
+export const addManualInvoice = (body: ManualInvoiceBody) =>
+  getJSON<ManualEntryResponse>("/api/invoices/manual", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });

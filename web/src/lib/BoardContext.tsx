@@ -22,6 +22,7 @@ import type {
 } from "./types";
 import {
   approveInvoice,
+  type BoardMode,
   checkPayments,
   flagDecision,
   getActivity,
@@ -30,7 +31,6 @@ import {
   getMetrics,
   refreshBoard,
 } from "./api";
-import { useDemo } from "./DemoContext";
 
 interface Toast {
   tone: "ok" | "err";
@@ -63,8 +63,18 @@ export function useBoard(): BoardCtx {
   return ctx;
 }
 
-export default function BoardProvider({ children }: { children: React.ReactNode }) {
-  const { demoEnabled } = useDemo();
+export default function BoardProvider({
+  children,
+  mode,
+}: {
+  children: React.ReactNode;
+  // Which board this provider fetches - the shared demo tenants, or the
+  // signed-in operator's own tenant (Phase 1, FR-6). The provider is only ever
+  // mounted once there's something to show (dashboard/page.tsx decides that),
+  // so - unlike before - it always fetches on mount; no internal "wait for
+  // opt-in" gate is needed here anymore.
+  mode: BoardMode;
+}) {
   const [board, setBoard] = useState<BoardResponse | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -80,23 +90,23 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
 
   const loadAll = useCallback(async () => {
     const [b, m, a, g] = await Promise.all([
-      getBoard(),
-      getMetrics(),
-      getActivity(),
-      getGuardrails(),
+      getBoard(mode),
+      getMetrics(mode),
+      getActivity(mode),
+      getGuardrails(mode),
     ]);
     setBoard(b);
     setMetrics(m);
     setActivity(a);
     setGuardrails(g);
     setError(null);
-  }, []);
+  }, [mode]);
 
   const refresh = useCallback(
     async (hard = false) => {
       setRefreshing(true);
       try {
-        if (hard) await refreshBoard();
+        if (hard) await refreshBoard(mode);
         await loadAll();
       } catch (e) {
         setError(String((e as Error).message ?? e));
@@ -104,16 +114,10 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
         setRefreshing(false);
       }
     },
-    [loadAll],
+    [loadAll, mode],
   );
 
   useEffect(() => {
-    // No engine traffic until the operator opts into the demo board. A
-    // brand-new user sees the zero-state with no data fetched.
-    if (!demoEnabled) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     fetch("/api/health")
       .then((r) => r.json())
@@ -128,7 +132,7 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     loadAll()
       .catch((e) => setError(String((e as Error).message ?? e)))
       .finally(() => setLoading(false));
-  }, [demoEnabled, loadAll]);
+  }, [mode, loadAll]);
 
   useEffect(() => {
     if (!toast) return;
@@ -181,9 +185,9 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
   );
 
   // Auto-detect Stripe payments: poll the engine, which reconciles any paid invoices
-  // on its own. Only runs when the demo board is open and Stripe is armed.
+  // on its own. Only runs while a board is mounted and Stripe is armed.
   useEffect(() => {
-    if (!demoEnabled || !stripeEnabled) return;
+    if (!stripeEnabled) return;
     const tick = async () => {
       try {
         const res = await checkPayments();
@@ -197,7 +201,7 @@ export default function BoardProvider({ children }: { children: React.ReactNode 
     };
     const t = setInterval(tick, 12000);
     return () => clearInterval(t);
-  }, [demoEnabled, stripeEnabled, loadAll]);
+  }, [stripeEnabled, loadAll]);
 
   const value: BoardCtx = {
     board,

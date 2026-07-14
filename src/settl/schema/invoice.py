@@ -25,6 +25,7 @@ class Source(str, Enum):
     CSV = "csv"
     QUICKBOOKS = "quickbooks"
     PDF = "pdf"
+    MANUAL = "manual"  # typed directly into the dashboard form, not parsed from a file
 
 
 class InvoiceStatus(str, Enum):

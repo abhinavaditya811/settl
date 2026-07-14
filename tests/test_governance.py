@@ -45,7 +45,10 @@ def _inv(*, iid="INV-G", is_b2b=True, status=InvoiceStatus.OPEN, debtor="Acme", 
 
 
 def _rule(**over) -> OperatorRule:
-    base = dict(scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE, criteria={"debtor_name": "Acme"})
+    base = dict(
+        scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE,
+        criteria={"debtor_name": "Acme"}, tenant_id="t_demo",
+    )
     base.update(over)
     return OperatorRule(**base)
 
@@ -72,6 +75,14 @@ def test_matches_on_attributes():
     assert matches(_rule(criteria={"is_b2b": False}), inv)
     assert matches(_rule(criteria={"status": "disputed", "debtor_name": "Acme"}), inv)
     assert not matches(_rule(criteria={"is_b2b": True}), inv)
+
+
+def test_rule_never_matches_a_different_tenants_invoice():
+    # Same debtor_name, different tenant - a guardrail from tenant A must not steer
+    # tenant B's invoice just because the criteria happen to line up.
+    other_tenant_inv = _inv().model_copy(update={"tenant_id": "t_other"})
+    assert not matches(_rule(tenant_id="t_demo"), other_tenant_inv)
+    assert matches(_rule(tenant_id="t_other"), other_tenant_inv)
 
 
 def test_days_overdue_gte_and_empty_criteria():

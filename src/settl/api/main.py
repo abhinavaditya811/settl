@@ -17,6 +17,8 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
     POST /retell/webhook            Retell end-of-call events → call artifact + opt-out
     POST /refresh                   re-run the board over the dataset
+    POST /invoices/import/csv       upload a CSV of invoices (Depends: mine scope)
+    POST /invoices/manual           add one invoice by hand (Depends: mine scope)
 
 CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
 """
@@ -24,11 +26,16 @@ CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
 from __future__ import annotations
 
 import os
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from settl.adapters.csv_adapter import CsvFormatError
+from settl.adapters.manual_entry import ManualInvoiceInput
+from settl.api.identity import BoardScope, board_scope, require_mine_scope
 from settl.api.schemas import (
     ActivityEntry,
     ApproveBody,
@@ -36,12 +43,17 @@ from settl.api.schemas import (
     BoardResponse,
     BoardSummary,
     CheckPaymentsResponse,
+    CsvImportBody,
+    CsvImportResponse,
     FlagRequest,
     FlagResponse,
     GuardrailView,
     InvoiceCard,
     InvoiceDetail,
+    ManualEntryResponse,
+    ManualInvoiceBody,
     Metrics,
+    RowIssue,
     StepView,
     TraceEntry,
     WebhookAck,
@@ -50,6 +62,7 @@ from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
+from settl.schema.validation import validate_invoice
 from settl.voice.registry import DoNotCallRegistry
 from settl.voice.webhook import ingest_retell_webhook
 
@@ -129,27 +142,27 @@ def health() -> dict:
 
 
 @app.get("/invoices", response_model=BoardResponse)
-def invoices() -> BoardResponse:
-    cards = [_card(inv, res) for inv, res in state.results()]
+def invoices(scope: BoardScope = Depends(board_scope)) -> BoardResponse:
+    cards = [_card(inv, res) for inv, res in state.results(scope.tenant_ids)]
     return BoardResponse(
-        summary=BoardSummary(total=len(cards), counts=state.counts()),
+        summary=BoardSummary(total=len(cards), counts=state.counts(scope.tenant_ids)),
         invoices=cards,
     )
 
 
 @app.get("/metrics", response_model=Metrics)
-def metrics() -> Metrics:
-    return Metrics(**state.metrics())
+def metrics(scope: BoardScope = Depends(board_scope)) -> Metrics:
+    return Metrics(**state.metrics(scope.tenant_ids))
 
 
 @app.get("/activity", response_model=list[ActivityEntry])
-def activity(limit: int = 50) -> list[ActivityEntry]:
+def activity(limit: int = 50, scope: BoardScope = Depends(board_scope)) -> list[ActivityEntry]:
     return [
         ActivityEntry(
             timestamp=e.timestamp, invoice_id=e.invoice_id, agent=e.agent,
             decision=e.decision, reasoning=e.reasoning,
         )
-        for e in state.activity(limit)
+        for e in state.activity(limit, scope.tenant_ids)
     ]
 
 
@@ -209,8 +222,8 @@ def flag(invoice_id: str, body: FlagRequest) -> FlagResponse:
 
 
 @app.get("/guardrails", response_model=list[GuardrailView])
-def guardrails() -> list[GuardrailView]:
-    return [GuardrailView(**g) for g in state.guardrails()]
+def guardrails(scope: BoardScope = Depends(board_scope)) -> list[GuardrailView]:
+    return [GuardrailView(**g) for g in state.guardrails(scope.tenant_ids)]
 
 
 @app.post("/check-payments", response_model=CheckPaymentsResponse)
@@ -253,6 +266,58 @@ async def retell_webhook(request: Request) -> WebhookAck:
 
 
 @app.post("/refresh", response_model=BoardResponse)
-def refresh() -> BoardResponse:
+def refresh(scope: BoardScope = Depends(board_scope)) -> BoardResponse:
     state.refresh()
-    return invoices()
+    return invoices(scope)
+
+
+_MAX_CSV_BYTES = 5 * 1024 * 1024  # a light guard, not a real streaming-import design
+
+
+@app.post("/invoices/import/csv", response_model=CsvImportResponse)
+def import_csv(
+    body: CsvImportBody, scope: BoardScope = Depends(require_mine_scope)
+) -> CsvImportResponse:
+    if len(body.csv.encode("utf-8")) > _MAX_CSV_BYTES:
+        raise HTTPException(413, f"CSV too large (max {_MAX_CSV_BYTES // (1024 * 1024)}MB)")
+    tenant_id = next(iter(scope.tenant_ids))
+    try:
+        result = state.import_csv(tenant_id, body.csv)
+    except CsvFormatError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return CsvImportResponse(
+        accepted=len(result.invoices),
+        quarantined=len(result.quarantined_ids),
+        rejected=[RowIssue(row=r.row, reasons=list(r.reasons)) for r in result.rejected],
+        invoice_ids=[inv.invoice_id for inv in result.invoices],
+    )
+
+
+@app.post("/invoices/manual", response_model=ManualEntryResponse)
+def add_manual_invoice(
+    body: ManualInvoiceBody, scope: BoardScope = Depends(require_mine_scope)
+) -> ManualEntryResponse:
+    tenant_id = next(iter(scope.tenant_ids))
+    try:
+        payload = ManualInvoiceInput(
+            debtor_name=body.debtor_name,
+            amount_due=Decimal(body.amount_due),
+            issue_date=date.fromisoformat(body.issue_date),
+            due_date=date.fromisoformat(body.due_date),
+            is_b2b=body.is_b2b,
+            debtor_email=body.debtor_email,
+            debtor_phone=body.debtor_phone,
+            currency=body.currency,
+            late_fee_allowed=body.late_fee_allowed,
+            payment_link=body.payment_link,
+            invoice_number=body.invoice_number,
+        )
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(400, f"invalid field: {exc}") from exc
+    invoice = state.add_manual_invoice(tenant_id, payload)
+    issues = validate_invoice(invoice)
+    return ManualEntryResponse(
+        invoice_id=invoice.invoice_id,
+        quarantined=bool(issues),
+        issues=[f"{i.field}: {i.message}" for i in issues],
+    )
