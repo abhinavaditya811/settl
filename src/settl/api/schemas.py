@@ -133,3 +133,39 @@ class Metrics(BaseModel):
     awaiting_count: int
     awaiting_amount: float
     aging: list[AgingBucket]
+
+
+class CsvImportBody(BaseModel):
+    csv: str  # raw file text - the browser reads File.text(), no multipart needed
+
+
+class RowIssue(BaseModel):
+    row: int  # 1-indexed, matching what a spreadsheet user sees
+    reasons: list[str]
+
+
+class CsvImportResponse(BaseModel):
+    accepted: int  # written (actionable + quarantined)
+    quarantined: int  # subset of accepted the orchestrator will quarantine
+    rejected: list[RowIssue]  # never written - a required field didn't parse
+    invoice_ids: list[str]
+
+
+class ManualInvoiceBody(BaseModel):
+    debtor_name: str
+    amount_due: str  # decimal-as-string, same convention as InvoiceCard.amount_due
+    issue_date: str  # YYYY-MM-DD
+    due_date: str
+    is_b2b: bool
+    debtor_email: str | None = None
+    debtor_phone: str | None = None
+    currency: str = "USD"
+    late_fee_allowed: bool = False
+    payment_link: str | None = None
+    invoice_number: str | None = None
+
+
+class ManualEntryResponse(BaseModel):
+    invoice_id: str
+    quarantined: bool
+    issues: list[str] = []

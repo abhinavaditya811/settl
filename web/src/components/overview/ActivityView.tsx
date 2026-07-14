@@ -1,34 +1,21 @@
 "use client";
 
-// Redesigned Activity tab (preview, mock data): the audit + observability surface.
-// A period digest of what the agent did, a safety strip (the trust proof), and a
-// grouped plain-English timeline filterable by agent + "safety only". Export and
-// the period rollups are mock for now.
+// Activity tab: the audit + observability surface - a grouped, plain-English
+// timeline of every real logged decision, filterable by agent + "safety only."
+// The old period digest (today/week/month rollups) and "0 unsafe ever" trust
+// strip are cut - no rollup endpoint exists, and a windowed 50-row fetch can't
+// honestly back a global guarantee. See ActivityList.tsx's TONE map for what
+// counts as a "safety" decision - reused here rather than reinvented.
 
 import { useMemo, useState } from "react";
 import styled, { useTheme } from "styled-components";
 import type { AppTheme } from "@/lib/theme";
-import { activity, agentLabel, digest, toneFg, type DigestPeriod } from "./previewData";
+import { useBoard } from "@/lib/BoardContext";
+import { prettyAgent, timeAgo } from "@/lib/format";
+import { TONE } from "@/components/ActivityList";
 
 const Title = styled.h1`font-size: 22px; font-weight: 700; margin: 0;`;
-const Row1 = styled.div`display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px;`;
-const Sub = styled.p`font-size: 13.5px; color: ${({ theme }) => theme.textMuted}; margin: 0;`;
-const Export = styled.button`
-  font-size: 12.5px; padding: 8px 13px; border-radius: 8px; cursor: pointer; white-space: nowrap;
-  border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; color: ${({ theme }) => theme.text};
-  &:hover { background: ${({ theme }) => theme.surfaceAlt}; }
-`;
-const Seg = styled.div`display: inline-flex; border: 1px solid ${({ theme }) => theme.border}; border-radius: 9px; overflow: hidden; margin-bottom: 14px;`;
-const SegBtn = styled.button<{ $on: boolean }>`
-  font-size: 12.5px; padding: 6px 14px; cursor: pointer; border: none;
-  background: ${({ theme, $on }) => ($on ? theme.accent : "transparent")};
-  color: ${({ theme, $on }) => ($on ? theme.accentText : theme.textMuted)};
-`;
-const Card = styled.div`background: ${({ theme }) => theme.surface}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;`;
-const Stats = styled.div`display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px;`;
-const Stat = styled.div`background: ${({ theme }) => theme.surfaceAlt}; border-radius: 9px; padding: 10px 12px; .v { font-size: 20px; font-weight: 700; } .l { font-size: 12px; color: ${({ theme }) => theme.textMuted}; margin-top: 1px; }`;
-const Safe = styled.div`display: flex; align-items: center; gap: 12px; background: ${({ theme }) => theme.status.sent.bg}; border: 1px solid ${({ theme }) => theme.status.sent.fg}; border-radius: 11px; padding: 13px 16px; margin-bottom: 14px; .big { font-size: 13.5px; font-weight: 700; color: ${({ theme }) => theme.status.sent.fg}; } .sub { font-size: 12.5px; color: ${({ theme }) => theme.status.sent.fg}; }`;
-const Shield = styled.span<{ $c: string }>`font-size: 22px; line-height: 1; color: ${({ $c }) => $c};`;
+const Sub = styled.p`font-size: 13.5px; color: ${({ theme }) => theme.textMuted}; margin: 4px 0 16px;`;
 const Chips = styled.div`display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;`;
 const Chip = styled.button<{ $on: boolean }>`
   font-size: 12.5px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
@@ -47,79 +34,84 @@ const Ev = styled.div`
   .inv { font-size: 11px; color: ${({ theme }) => theme.accent}; font-family: ui-monospace, Menlo, monospace; }
   .t { font-size: 12px; color: ${({ theme }) => theme.textMuted}; white-space: nowrap; }
 `;
-const PERIODS: { k: DigestPeriod; label: string }[] = [
-  { k: "today", label: "Today" }, { k: "week", label: "Week" }, { k: "month", label: "Month" },
-];
-const PERIOD_WORD: Record<DigestPeriod, string> = { today: "Today", week: "This week", month: "This month" };
+
+const SAFETY_TONES = new Set(["escalated", "quarantined"]);
+
+function dayBucket(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOfDay = (dt: Date) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 export default function ActivityView() {
   const theme = useTheme() as AppTheme;
-  const [period, setPeriod] = useState<DigestPeriod>("week");
+  const { activity } = useBoard();
   const [agent, setAgent] = useState("all");
   const [safetyOnly, setSafetyOnly] = useState(false);
-  const d = digest[period];
 
-  const agents = useMemo(() => Array.from(new Set(activity.map((e) => e.agent))), []);
-  const rows = activity.filter((e) => (agent === "all" || e.agent === agent) && (!safetyOnly || e.safety));
-  const byDay = (["Today", "Yesterday"] as const).map((day) => ({ day, items: rows.filter((e) => e.day === day) })).filter((g) => g.items.length);
+  const agents = useMemo(() => Array.from(new Set(activity.map((e) => e.agent))), [activity]);
+
+  const rows = useMemo(
+    () =>
+      activity.filter((e) => {
+        const tone = TONE[e.decision] ?? "skipped";
+        return (agent === "all" || e.agent === agent) && (!safetyOnly || SAFETY_TONES.has(tone));
+      }),
+    [activity, agent, safetyOnly],
+  );
+
+  const groups = useMemo(() => {
+    const map = new Map<string, typeof rows>();
+    for (const e of rows) {
+      const key = dayBucket(e.timestamp);
+      const bucket = map.get(key) ?? [];
+      bucket.push(e);
+      map.set(key, bucket);
+    }
+    return Array.from(map.entries());
+  }, [rows]);
 
   return (
     <>
       <Title>Activity</Title>
-      <Row1>
-        <Sub>Everything the agent did — the audit trail behind every invoice.</Sub>
-        <Export>↓ Export audit log</Export>
-      </Row1>
+      <Sub>Everything the agent did — the audit trail behind every invoice.</Sub>
 
-      <Seg>
-        {PERIODS.map((p) => <SegBtn key={p.k} $on={period === p.k} onClick={() => setPeriod(p.k)}>{p.label}</SegBtn>)}
-      </Seg>
-
-      <Card>
-        <div style={{ fontSize: 13.5 }}>
-          <span style={{ fontWeight: 700 }}>{PERIOD_WORD[period]},</span> Settl handled{" "}
-          <span style={{ fontWeight: 700 }}>{d.handled} invoices</span> across {d.customers} customers — autonomously.
-        </div>
-        <Stats>
-          <Stat><div className="v">{d.sent}</div><div className="l">reminders sent</div></Stat>
-          <Stat><div className="v" style={{ color: theme.status.sent.fg }}>{d.recovered}</div><div className="l">recovered</div></Stat>
-          <Stat><div className="v" style={{ color: theme.status.awaiting_approval.fg }}>{d.held}</div><div className="l">held for you</div></Stat>
-          <Stat><div className="v" style={{ color: theme.status.escalated.fg }}>{d.blocked}</div><div className="l">blocked by the gate</div></Stat>
-        </Stats>
-      </Card>
-
-      <Safe>
-        <Shield $c={theme.status.sent.fg}>🛡</Shield>
-        <div>
-          <div className="big">0 unsafe or consumer-debt messages ever sent</div>
-          <div className="sub">every decision logged · {d.blocked} risky {d.blocked === 1 ? "draft" : "drafts"} caught and escalated to you</div>
-        </div>
-      </Safe>
-
-      <Chips>
-        <Chip $on={agent === "all"} onClick={() => setAgent("all")}>All</Chip>
-        {agents.map((a) => <Chip key={a} $on={agent === a} onClick={() => setAgent(a)}>{agentLabel[a] ?? a}</Chip>)}
-        <Chip $on={safetyOnly} onClick={() => setSafetyOnly((s) => !s)}>🛡 Safety only</Chip>
-      </Chips>
-
-      {byDay.length === 0 ? (
-        <Sub>No activity matches your filters.</Sub>
-      ) : byDay.map((g) => (
-        <div key={g.day}>
-          <Day>{g.day}</Day>
-          {g.items.map((e, i) => (
-            <Ev key={i}>
-              <span className="dot" style={{ background: toneFg(e.tone, theme) }} />
-              <div>
-                <div className="a">{agentLabel[e.agent] ?? e.agent}</div>
-                <div className="l">{e.line}</div>
-                <span className="inv">{e.inv} ↗</span>
-              </div>
-              <span className="t">{e.time}</span>
-            </Ev>
+      {activity.length > 0 && (
+        <Chips>
+          <Chip $on={agent === "all"} onClick={() => setAgent("all")}>All</Chip>
+          {agents.map((a) => (
+            <Chip key={a} $on={agent === a} onClick={() => setAgent(a)}>{prettyAgent(a)}</Chip>
           ))}
-        </div>
-      ))}
+          <Chip $on={safetyOnly} onClick={() => setSafetyOnly((s) => !s)}>🛡 Safety only</Chip>
+        </Chips>
+      )}
+
+      {activity.length === 0 ? (
+        <Sub>Settl hasn&rsquo;t taken any actions yet.</Sub>
+      ) : groups.length === 0 ? (
+        <Sub>No activity matches your filters.</Sub>
+      ) : (
+        groups.map(([day, items]) => (
+          <div key={day}>
+            <Day>{day}</Day>
+            {items.map((e, i) => (
+              <Ev key={`${e.invoice_id}-${i}`}>
+                <span className="dot" style={{ background: theme.status[TONE[e.decision] ?? "skipped"].fg }} />
+                <div>
+                  <div className="a">{prettyAgent(e.agent)}</div>
+                  <div className="l">{e.reasoning}</div>
+                  <span className="inv">{e.invoice_id} ↗</span>
+                </div>
+                <span className="t">{timeAgo(e.timestamp)}</span>
+              </Ev>
+            ))}
+          </div>
+        ))
+      )}
     </>
   );
 }

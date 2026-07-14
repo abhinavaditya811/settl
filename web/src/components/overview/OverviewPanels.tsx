@@ -1,14 +1,15 @@
 "use client";
 
 // The supporting Overview panels: overdue-by-age, what-the-agent-decided,
-// needs-your-approval, and the plain-English activity feed.
+// needs-your-approval, and the recent activity feed - all real, from useBoard().
 
-import { useEffect, useState } from "react";
 import styled, { useTheme } from "styled-components";
 import type { AppTheme } from "@/lib/theme";
-import {
-  aging, decisions, approvals, feed, toneFg, toneBg,
-} from "./previewData";
+import { useBoard } from "@/lib/BoardContext";
+import { formatMoney, overdueLabel } from "@/lib/format";
+import ActivityList from "@/components/ActivityList";
+import AgingChart from "./AgingChart";
+import OutcomeBar from "./OutcomeBar";
 
 const Card = styled.div`
   background: ${({ theme }) => theme.surface};
@@ -16,14 +17,12 @@ const Card = styled.div`
   border-radius: 14px;
   margin-bottom: 14px;
 `;
-const Pad = styled(Card)`padding: 16px 18px;`;
 const Head = styled.div`
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px;
   .t { font-size: 14px; font-weight: 700; }
   .m { font-size: 12.5px; color: ${({ theme }) => theme.textMuted}; }
 `;
-const Title = styled.div`font-size: 14px; font-weight: 700; margin-bottom: 14px;`;
 const Two = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -63,146 +62,86 @@ const BtnPrimary = styled(Btn)`
 `;
 const Line = styled.div`font-size: 14px; b { font-weight: 700; }`;
 const Sub = styled.div`font-size: 12.5px; color: ${({ theme }) => theme.textMuted}; margin-top: 2px;`;
+const Empty = styled.div`padding: 8px 18px 18px; font-size: 13.5px; color: ${({ theme }) => theme.textMuted};`;
+const ListPad = styled.div`padding: 0 10px 6px;`;
 
-function AgingPanel() {
-  const theme = useTheme() as AppTheme;
-  const [m, setM] = useState(false);
-  useEffect(() => { const id = setTimeout(() => setM(true), 80); return () => clearTimeout(id); }, []);
-  const max = Math.max(...aging.map((a) => a.amount));
-  return (
-    <Pad style={{ margin: 0 }}>
-      <Title>Overdue by age</Title>
-      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-        {aging.map((a) => (
-          <div key={a.label}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 }}>
-              <span style={{ color: theme.textMuted }}>{a.label} · {a.count}</span>
-              <span style={{ fontWeight: 700 }}>${a.amount.toLocaleString()}</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 999, background: theme.surfaceAlt }}>
-              <div style={{
-                height: 8, borderRadius: 999, background: toneFg(a.tone, theme),
-                width: m ? `${Math.round((a.amount / max) * 100)}%` : 0,
-                transition: "width 1.1s cubic-bezier(.2,.7,.2,1)",
-              }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </Pad>
-  );
-}
-
-function DecisionsPanel() {
-  const theme = useTheme() as AppTheme;
-  const [m, setM] = useState(false);
-  useEffect(() => { const id = setTimeout(() => setM(true), 80); return () => clearTimeout(id); }, []);
-  const total = decisions.reduce((s, d) => s + d.value, 0);
-  return (
-    <Pad style={{ margin: 0 }}>
-      <Title>What the agent decided</Title>
-      <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: theme.surfaceAlt }}>
-        {decisions.map((d) => (
-          <div key={d.label} style={{
-            height: "100%", background: toneFg(d.tone, theme),
-            width: m ? `${(d.value / total) * 100}%` : 0,
-            transition: "width 1.1s cubic-bezier(.2,.7,.2,1)",
-          }} />
-        ))}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px 14px", marginTop: 14 }}>
-        {decisions.map((d) => (
-          <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: theme.textMuted }}>
-            <span style={{ width: 9, height: 9, borderRadius: 3, background: toneFg(d.tone, theme) }} />
-            <span style={{ color: theme.text }}>{d.label}</span> {d.value}
-          </div>
-        ))}
-      </div>
-    </Pad>
-  );
-}
-
-function PlayScript({ text }: { text: string }) {
-  // Preview the call script with the browser's built-in voice (no backend, no
-  // cost). The real call speaks via the engine's TTS provider; this is a preview.
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => () => window.speechSynthesis?.cancel(), []);
-  const toggle = () => {
-    if (playing) { window.speechSynthesis.cancel(); setPlaying(false); return; }
-    const u = new SpeechSynthesisUtterance(text);
-    u.onend = () => setPlaying(false);
-    u.onerror = () => setPlaying(false);
-    window.speechSynthesis.speak(u);
-    setPlaying(true);
-  };
-  return (
-    <Btn onClick={toggle} aria-label={playing ? "Stop the call preview" : "Hear the call script"}>
-      {playing ? "◼ Stop" : "▶ Play"}
-    </Btn>
-  );
-}
+const goToApprovals = () => {
+  if (typeof window !== "undefined") window.location.hash = "approvals";
+};
 
 function ApprovalsPanel() {
   const theme = useTheme() as AppTheme;
-  const fg = theme.status.awaiting_approval.fg, bg = theme.status.awaiting_approval.bg;
+  const { board } = useBoard();
+  const fg = theme.status.awaiting_approval.fg;
+  const bg = theme.status.awaiting_approval.bg;
+  const queued = (board?.invoices ?? []).filter((i) => i.can_approve);
+
   return (
     <Card>
       <Head>
         <span className="t">Needs your approval</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Pill $fg={fg} $bg={bg}>{approvals.length} waiting</Pill>
-          <BtnPrimary>Review all</BtnPrimary>
-        </span>
-      </Head>
-      {approvals.map((a) => (
-        <Row key={a.initials}>
-          <Avatar $fg={fg} $bg={bg}>{a.channel === "voice" ? "📞" : a.initials}</Avatar>
-          <div>
-            <Line>
-              {a.channel === "voice"
-                ? <>First voice call to <b>{a.name}</b></>
-                : <>First message to <b>{a.name}</b></>}
-            </Line>
-            <Sub>{a.sub}</Sub>
-          </div>
-          <span style={{ display: "flex", gap: 8 }}>
-            {a.channel === "voice" && <PlayScript text={a.draft} />}
-            <Btn>Review</Btn>
+        {queued.length > 0 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Pill $fg={fg} $bg={bg}>{queued.length} waiting</Pill>
+            <BtnPrimary onClick={goToApprovals}>Review all</BtnPrimary>
           </span>
-        </Row>
-      ))}
+        )}
+      </Head>
+      {queued.length === 0 ? (
+        <Empty>Nothing waiting on you right now.</Empty>
+      ) : (
+        queued.slice(0, 4).map((inv) => (
+          <Row key={inv.invoice_id}>
+            <Avatar $fg={fg} $bg={bg}>
+              {inv.channel === "voice" ? "📞" : inv.debtor_name.slice(0, 2).toUpperCase()}
+            </Avatar>
+            <div>
+              <Line>
+                {inv.channel === "voice" ? (
+                  <>First voice call to <b>{inv.debtor_name}</b></>
+                ) : (
+                  <>First message to <b>{inv.debtor_name}</b></>
+                )}
+              </Line>
+              <Sub>
+                {formatMoney(inv.amount_due, inv.currency)} · {overdueLabel(inv.days_overdue)} ·{" "}
+                {inv.channel ?? "email"} draft
+              </Sub>
+            </div>
+            <Btn onClick={goToApprovals}>Review</Btn>
+          </Row>
+        ))
+      )}
     </Card>
   );
 }
 
-function ActivityFeed() {
-  const theme = useTheme() as AppTheme;
+function RecentActivity() {
+  const { activity } = useBoard();
   return (
     <Card>
-      <Head><span className="t">What Settl did</span><span className="m">last 24 hours</span></Head>
-      {feed.map((f, i) => (
-        <Row key={i}>
-          <Avatar $fg={toneFg(f.tone, theme)} $bg={toneBg(f.tone, theme)}>{f.initials}</Avatar>
-          <div><Line dangerouslySetInnerHTML={{ __html: f.line.replace(/(Summit Roofing Co|Northwind Logistics|Cedar & Co|J\. Alvarez)/, "<b>$1</b>") }} /><Sub>{f.sub}</Sub></div>
-          <div style={{ textAlign: "right" }}>
-            <Pill $fg={toneFg(f.tone, theme)} $bg={toneBg(f.tone, theme)}>{f.status}</Pill>
-            <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>{f.time}</div>
-          </div>
-        </Row>
-      ))}
+      <Head>
+        <span className="t">What Settl did</span>
+        <span className="m">most recent</span>
+      </Head>
+      <ListPad>
+        <ActivityList entries={activity} limit={4} />
+      </ListPad>
     </Card>
   );
 }
 
 export default function OverviewPanels() {
+  const { board, metrics } = useBoard();
+  if (!board || !metrics) return null;
   return (
     <>
       <Two>
-        <AgingPanel />
-        <DecisionsPanel />
+        <AgingChart metrics={metrics} />
+        <OutcomeBar summary={board.summary} />
       </Two>
       <ApprovalsPanel />
-      <ActivityFeed />
+      <RecentActivity />
     </>
   );
 }

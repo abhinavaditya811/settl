@@ -5,8 +5,10 @@ import type { ActivityEntry, TerminalState } from "@/lib/types";
 import { prettyAgent, timeAgo } from "@/lib/format";
 import { EmptyState } from "@/components/ui";
 
-// Map a logged decision to a status color so the feed reads at a glance.
-const TONE: Record<string, TerminalState> = {
+// Map a logged decision to a status color so the feed reads at a glance. Exported
+// so other real activity views (ActivityView.tsx) can reuse the same
+// categorization instead of reinventing "what counts as a safety event."
+export const TONE: Record<string, TerminalState> = {
   escalate: "escalated",
   withheld: "escalated",
   quarantined: "quarantined",

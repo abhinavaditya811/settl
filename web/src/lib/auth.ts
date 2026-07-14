@@ -38,12 +38,21 @@ export const authOptions: NextAuthOptions = {
   // unauthenticated users and where errors surface.
   pages: { signIn: "/signin" },
   callbacks: {
-    // Runs on sign-in and on every session read. `account` is only present on
-    // the initial sign-in, when the OAuth tokens are available.
-    async jwt({ token, account }) {
+    // Runs on sign-in and on every session read. `account`/`profile` are only
+    // present on the initial sign-in, when the OAuth tokens are available.
+    async jwt({ token, account, profile }) {
       if (account) {
         if (account.refresh_token) token.refreshToken = account.refresh_token;
         token.accessToken = account.access_token;
+        // Google's OIDC subject id - the stable per-account identifier the engine
+        // uses as the tenant key (Phase 1, FR-6). NextAuth maps this to token.sub
+        // by default already, but that's an implicit provider behavior; set it
+        // explicitly from the profile so tenant resolution never depends on it.
+        if (profile && "sub" in profile && typeof profile.sub === "string") {
+          token.sub = profile.sub;
+        } else if (account.providerAccountId) {
+          token.sub = account.providerAccountId;
+        }
       }
       return token;
     },

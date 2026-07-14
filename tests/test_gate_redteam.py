@@ -88,7 +88,7 @@ def test_near_miss_slips_the_base_gate_then_a_guardrail_catches_it():
 
     store = RuleStore()
     store.add(OperatorRule(
-        scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE,
+        scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE, tenant_id=inv.tenant_id,
         criteria={"debtor_name": inv.debtor_name}, reason="passive-aggressive tone the gate missed",
     ))
     caught = ComplianceGate(rules_store=store).evaluate(inv, near_miss)
@@ -104,7 +104,7 @@ def test_a_human_flag_can_never_waive_a_legal_threat():
     store = RuleStore()
     store.add(OperatorRule(
         scope=Scope.COMPLIANCE, directive=Directive.WAIVE, waive_code="LEGAL_THREAT",
-        criteria={"debtor_name": _clean_invoice().debtor_name},
+        criteria={"debtor_name": _clean_invoice().debtor_name}, tenant_id=_clean_invoice().tenant_id,
     ))
     result = ComplianceGate(rules_store=store).evaluate(
         _clean_invoice(), "Pay now or we will sue you."

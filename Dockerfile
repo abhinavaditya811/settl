@@ -19,7 +19,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     "pydantic>=2.6" \
     "fastapi>=0.110" \
-    "uvicorn[standard]>=0.29"
+    "uvicorn[standard]>=0.29" \
+    "psycopg[binary]>=3.1"
 
 COPY src ./src
 

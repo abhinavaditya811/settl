@@ -6,6 +6,6 @@
 next-env.d.ts.timestamp
 
 # local env
-.env*.local
 .vercel
 .env*
+!.env.local.example

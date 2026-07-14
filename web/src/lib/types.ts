@@ -103,6 +103,38 @@ export interface GuardrailView {
   created_at: string;
 }
 
+export interface RowIssue {
+  row: number; // 1-indexed, matching what a spreadsheet user sees
+  reasons: string[];
+}
+
+export interface CsvImportResponse {
+  accepted: number; // written (actionable + quarantined)
+  quarantined: number; // subset of accepted the orchestrator will quarantine
+  rejected: RowIssue[]; // never written - a required field didn't parse
+  invoice_ids: string[];
+}
+
+export interface ManualInvoiceBody {
+  debtor_name: string;
+  amount_due: string;
+  issue_date: string; // YYYY-MM-DD
+  due_date: string;
+  is_b2b: boolean;
+  debtor_email?: string | null;
+  debtor_phone?: string | null;
+  currency?: string;
+  late_fee_allowed?: boolean;
+  payment_link?: string | null;
+  invoice_number?: string | null;
+}
+
+export interface ManualEntryResponse {
+  invoice_id: string;
+  quarantined: boolean;
+  issues: string[];
+}
+
 export interface ActivityEntry {
   timestamp: string;
   invoice_id: string;
