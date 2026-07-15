@@ -35,6 +35,19 @@ const StatLbl = styled.div`font-size: 14px; color: ${c.ink}; margin-top: 12px; f
 const StatSub = styled.div`${tele}; color: ${c.faint}; margin-top: 6px;`;
 const Note = styled.div`${tele}; color: ${c.faint}; margin-top: 22px;`;
 
+// --- pricing ---
+const Prices = styled.div`display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 38px; max-width: 720px; @media (max-width: 640px) { grid-template-columns: 1fr; }`;
+const PriceCard = styled.div<{ $accent?: boolean }>`
+  ${glass}; border-radius: 18px; padding: 30px 26px; position: relative; overflow: hidden;
+  border-color: ${({ $accent }) => ($accent ? "rgba(155,140,255,0.5)" : c.glassBorder)};
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  &:hover { transform: translateY(-4px); border-color: rgba(155,140,255,0.6); }
+  &::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: ${({ $accent }) => ($accent ? 1 : 0)}; background: radial-gradient(420px 160px at 50% 0%, rgba(109,94,246,0.18), transparent 70%); }
+`;
+const PTier = styled.div`${tele}; color: ${c.accent2};`;
+const PBig = styled.div`font-family: ${c.display}; font-size: 42px; font-weight: 700; letter-spacing: -0.03em; color: ${c.ink}; margin-top: 12px; line-height: 1; span { font-family: ${c.body}; font-size: 15px; font-weight: 500; color: ${c.muted}; letter-spacing: 0; margin-left: 4px; }`;
+const PText = styled.div`font-size: 14px; line-height: 1.6; color: ${c.muted}; margin-top: 14px; max-width: 34ch;`;
+
 // --- closing ---
 const Closer = styled.div`${glass}; border-radius: 24px; text-align: center; padding: 66px 28px; margin-top: 100px; position: relative; overflow: hidden; &::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px 200px at 50% 0%, rgba(109,94,246,0.22), transparent 70%); pointer-events: none; }`;
 const CloseH = styled.h2`font-family: ${c.display}; font-size: clamp(34px, 5.4vw, 58px); line-height: 1.0; letter-spacing: -0.04em; font-weight: 700; margin: 0 auto; max-width: 16ch; position: relative;`;
@@ -44,11 +57,11 @@ const Foot = styled.footer`display: flex; align-items: center; justify-content: 
 export default function LandingSections() {
   return (
     <>
-      <Section>
+      <Section id="safety" style={{ scrollMarginTop: 24 }}>
         <Reveal>
           <Kicker>// safety</Kicker>
           <H2>An agent you can actually trust.</H2>
-          <Lead>No legal threats, no consumer debt, B2B only. Every message clears a deterministic compliance gate — anything risky is escalated to you, never sent.</Lead>
+          <Lead>No legal threats, no consumer debt, B2B only. Every message clears a deterministic compliance gate, and anything risky is escalated to you, never sent.</Lead>
         </Reveal>
         <Reveal delay={0.1}>
           <Console>
@@ -57,7 +70,7 @@ export default function LandingSections() {
             <Readout>
               <RItem><div className="lbl">unsafe sends</div><div className="val"><span className="dot" />0</div><div className="sub">caught and escalated by the gate</div></RItem>
               <RItem><div className="lbl">compliance gate</div><div className="val"><span className="dot" />armed</div><div className="sub">runs on every single send</div></RItem>
-              <RItem><div className="lbl">funds touched</div><div className="val"><span className="dot" />$0</div><div className="sub">never custodial — paid via your processor</div></RItem>
+              <RItem><div className="lbl">funds touched</div><div className="val"><span className="dot" />$0</div><div className="sub">never custodial, paid via your processor</div></RItem>
               <RItem><div className="lbl">audit log</div><div className="val"><span className="dot" />on</div><div className="sub">every decision recorded with its reasoning</div></RItem>
             </Readout>
           </Console>
@@ -74,7 +87,32 @@ export default function LandingSections() {
           <Reveal delay={0.13}><StatCard><Big>~<Counter to={14} /></Big><StatLbl>hours saved a week</StatLbl><StatSub>no more manual chasing</StatSub></StatCard></Reveal>
           <Reveal delay={0.21}><StatCard><Big><Counter to={100} /><span>%</span></Big><StatLbl>messages compliant</StatLbl><StatSub>the gate clears every send</StatSub></StatCard></Reveal>
         </Stats>
-        <Note>illustrative — the demo runs on synthetic invoices, no real money figures</Note>
+        <Note>illustrative: the demo runs on synthetic invoices, with no real money figures</Note>
+      </Section>
+
+      <Section id="pricing" style={{ scrollMarginTop: 24 }}>
+        <Reveal>
+          <Kicker>// pricing</Kicker>
+          <H2>You only pay when you get paid.</H2>
+          <Lead>No seats and no monthly minimum. Settl earns a small success fee on the invoices it actually recovers, so our incentive is exactly yours.</Lead>
+        </Reveal>
+        <Prices>
+          <Reveal delay={0.05}>
+            <PriceCard>
+              <PTier>Pilot</PTier>
+              <PBig>Free</PBig>
+              <PText>Onboard your invoices and watch the agent work. No card, no commitment.</PText>
+            </PriceCard>
+          </Reveal>
+          <Reveal delay={0.13}>
+            <PriceCard $accent>
+              <PTier>After the pilot</PTier>
+              <PBig>Success fee</PBig>
+              <PText>A small fee only on invoices we help you collect. Nothing recovered, nothing owed.</PText>
+            </PriceCard>
+          </Reveal>
+        </Prices>
+        <Note>Never custodial: you&apos;re paid through your own processor, and Settl only ever records the fee.</Note>
       </Section>
 
       <Reveal>
@@ -86,7 +124,7 @@ export default function LandingSections() {
       </Reveal>
 
       <Foot>
-        <span>settl — autonomous AR</span>
+        <span>settl · autonomous AR</span>
         <span>demo runs on synthetic data · no real money figures</span>
       </Foot>
     </>
