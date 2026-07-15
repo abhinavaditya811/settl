@@ -32,7 +32,7 @@ export const lightTheme: AppTheme = {
   border: "#e4e7eb",
   text: "#16191d",
   textMuted: "#616b78",
-  accent: "#5b5bd6",
+  accent: "#6d5ef6", // unified with the landing accent (one brand purple)
   accentText: "#ffffff",
   shadow: "0 1px 2px rgba(16,24,40,0.04)",
   status: {
@@ -54,7 +54,7 @@ export const darkTheme: AppTheme = {
   border: "#2a323d",
   text: "#e6edf3",
   textMuted: "#8b949e",
-  accent: "#7c83ff",
+  accent: "#9b8cff", // unified with the landing accent (one brand purple, lighter for dark)
   accentText: "#0d1117",
   shadow: "0 1px 2px rgba(0,0,0,0.25)",
   status: {

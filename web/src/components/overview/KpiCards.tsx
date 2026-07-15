@@ -14,6 +14,11 @@ const Grid = styled.div`
 
 const Kpi = styled(Card)<{ $accent?: TerminalState }>`
   padding: 18px 18px 16px;
+  .ico {
+    width: 32px; height: 32px; border-radius: 9px; margin-bottom: 12px; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+    background: ${({ theme, $accent }) => ($accent ? theme.status[$accent].bg : theme.surfaceAlt)};
+  }
   .label {
     font-size: 12.5px;
     color: ${({ theme }) => theme.textMuted};
@@ -37,6 +42,7 @@ interface Item {
   label: string;
   value: string;
   sub: string;
+  icon: string;
   accent?: TerminalState;
 }
 
@@ -47,23 +53,27 @@ export default function KpiCards({ metrics }: { metrics: Metrics }) {
       label: "Outstanding",
       value: formatAmount(metrics.outstanding, ccy),
       sub: "still owed across open invoices",
+      icon: "🧾",
     },
     {
       label: "In flight",
       value: formatAmount(metrics.in_flight, ccy),
       sub: "actively being chased",
+      icon: "🔄",
       accent: "held",
     },
     {
       label: "Recovered",
       value: formatAmount(metrics.recovered, ccy),
       sub: "marked paid",
+      icon: "💰",
       accent: "sent",
     },
     {
       label: "Awaiting you",
       value: String(metrics.awaiting_count),
       sub: `${formatAmount(metrics.awaiting_amount, ccy)} pending sign-off`,
+      icon: "🔔",
       accent: "awaiting_approval",
     },
   ];
@@ -72,6 +82,7 @@ export default function KpiCards({ metrics }: { metrics: Metrics }) {
     <Grid>
       {items.map((it) => (
         <Kpi key={it.label} $accent={it.accent}>
+          <div className="ico" aria-hidden="true">{it.icon}</div>
           <div className="label">{it.label}</div>
           <div className="value">{it.value}</div>
           <div className="sub">{it.sub}</div>
