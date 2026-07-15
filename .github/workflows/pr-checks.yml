@@ -13,7 +13,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,api,db]"
-      - run: pytest -q
+      # -m pytest (not bare `pytest`) so the repo root lands on sys.path -
+      # tests/test_voice_hooks.py etc import fixtures via `from tests.x import y`.
+      - run: python -m pytest -q
 
   frontend-checks:
     runs-on: ubuntu-latest
