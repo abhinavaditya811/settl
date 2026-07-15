@@ -1,0 +1,137 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: detect
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            # New branch / force-push edge case with no diffable parent - deploy both
+            # rather than silently skip.
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '^(src/|Dockerfile|pyproject\.toml)'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED" | grep -qE '^web/'; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - run: |
+          gcloud run deploy settl-engine \
+            --source . \
+            --project agentapply-491321 \
+            --region us-central1 \
+            --quiet
+
+  deploy-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_yb5hv0AcVWdeTFCL6GAsXD7A
+      VERCEL_PROJECT_ID: prj_gmKtFVMk1lfHcxThwPoL2BMRnKJ6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npx vercel@latest --prod --yes --token="${{ secrets.VERCEL_TOKEN }}"
+
+  record-deployment:
+    needs: [changes, deploy-backend, deploy-frontend]
+    if: |
+      always() &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Update LAST_DEPLOY.md
+        env:
+          BACKEND_DEPLOYED: ${{ needs.deploy-backend.result == 'success' }}
+          FRONTEND_DEPLOYED: ${{ needs.deploy-frontend.result == 'success' }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import datetime
+          import pathlib
+
+          path = pathlib.Path("LAST_DEPLOY.md")
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+          sha = os.environ["COMMIT_SHA"][:7]
+
+          backend_deployed = os.environ["BACKEND_DEPLOYED"] == "true"
+          frontend_deployed = os.environ["FRONTEND_DEPLOYED"] == "true"
+
+          default = (
+              "# Last deployment\n\n"
+              "- **Backend (Cloud Run)**: never\n"
+              "- **Frontend (Vercel)**: never\n"
+          )
+          text = path.read_text() if path.exists() else default
+
+          if backend_deployed:
+              text = re.sub(
+                  r"- \*\*Backend \(Cloud Run\)\*\*:.*",
+                  f"- **Backend (Cloud Run)**: {now} — commit `{sha}`",
+                  text,
+              )
+          if frontend_deployed:
+              text = re.sub(
+                  r"- \*\*Frontend \(Vercel\)\*\*:.*",
+                  f"- **Frontend (Vercel)**: {now} — commit `{sha}`",
+                  text,
+              )
+
+          path.write_text(text)
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name "settl-ci"
+          git config user.email "ci@settl.local"
+          git add LAST_DEPLOY.md
+          if git diff --cached --quiet; then
+            echo "LAST_DEPLOY.md unchanged, nothing to commit"
+          else
+            git commit -m "chore: update LAST_DEPLOY.md [skip ci]"
+            git push
+          fi
