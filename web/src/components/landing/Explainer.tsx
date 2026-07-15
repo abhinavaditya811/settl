@@ -44,9 +44,9 @@ const PAINS = [
   "staying compliant so a message never crosses a legal line",
 ];
 const STAGES = [
-  { n: "01 · ingest", t: "Read", d: "Pulls each invoice from CSV or Stripe into one clean, canonical shape — agents never see a raw source." },
+  { n: "01 · ingest", t: "Read", d: "Pulls each invoice from CSV or Stripe into one clean, canonical shape. Agents never see a raw source." },
   { n: "02 · strategy", t: "Decide", d: "Skip, wait, or chase? Picks the timing, tone, and channel for this specific invoice." },
-  { n: "03 · draft", t: "Write", d: "Gemini drafts the message in your voice — friendly, firm, or final notice." },
+  { n: "03 · draft", t: "Write", d: "Gemini drafts the message in your voice: friendly, firm, or final notice." },
   { n: "04 · gate", t: "Check", d: "A deterministic compliance gate inspects every draft. Anything risky is blocked and escalated to you.", gate: true },
   { n: "05 · send", t: "Send", d: "Goes out from your own mailbox with the real payment link. First contact waits for your one-tap approval." },
   { n: "06 · reconcile", t: "Close", d: "Detects payment, records the success fee (never custodial), and loops back if it's still unpaid." },
@@ -59,7 +59,7 @@ export default function Explainer() {
         <Reveal>
           <Kicker>// the problem</Kicker>
           <H2>You did the work. Chasing the money shouldn&apos;t be your job.</H2>
-          <Lead>Every overdue invoice is the same grind — and the cash you&apos;ve already earned sits uncollected for weeks while you deal with it.</Lead>
+          <Lead>Every overdue invoice is the same grind, and the cash you&apos;ve already earned sits uncollected for weeks while you deal with it.</Lead>
         </Reveal>
         <Pain>
           {PAINS.map((p, i) => (
@@ -68,11 +68,11 @@ export default function Explainer() {
         </Pain>
       </Section>
 
-      <Section>
+      <Section id="how" style={{ scrollMarginTop: 24 }}>
         <Reveal>
           <Kicker>// what settl does</Kicker>
           <H2>Every invoice runs the same disciplined pipeline.</H2>
-          <Lead>No guesswork and no missed follow-ups. Each invoice flows through six stages — and the compliance gate is the hard line that nothing unsafe ever crosses.</Lead>
+          <Lead>No guesswork and no missed follow-ups. Each invoice flows through six stages, and the compliance gate is the hard line that nothing unsafe ever crosses.</Lead>
         </Reveal>
         <Pipe>
           {STAGES.map((s, i) => (

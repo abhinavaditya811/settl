@@ -42,19 +42,19 @@ const Big = styled.div`font-family: ${c.display}; font-size: 30px; font-weight: 
 const TABS = [
   {
     key: "overview", label: "Overview", sub: "Where your money is",
-    title: "See your cash, live.", desc: "Money recovered, in flight, and what needs you — plus a plain-English feed of everything the agent just did.",
+    title: "See your cash, live.", desc: "Money recovered, in flight, and what needs you, plus a plain-English feed of everything the agent just did.",
     view: (
       <Mini>
         <div style={{ fontFamily: c.mono, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: c.faint }}>money in motion</div>
         <Big>$45,970</Big>
-        <Row><Av $fg={c.ok} $bg={c.okBg}>SR</Av>Sent a firm reminder — Summit Roofing<Pill $fg={c.ok} $bg={c.okBg}>SENT</Pill></Row>
-        <Row><Av $fg={c.warn} $bg={c.warnBg}>BS</Av>Held for approval — Brightline<Pill $fg={c.warn} $bg={c.warnBg}>NEEDS YOU</Pill></Row>
+        <Row><Av $fg={c.ok} $bg={c.okBg}>SR</Av>Sent a firm reminder to Summit Roofing<Pill $fg={c.ok} $bg={c.okBg}>SENT</Pill></Row>
+        <Row><Av $fg={c.warn} $bg={c.warnBg}>BS</Av>Held for approval: Brightline<Pill $fg={c.warn} $bg={c.warnBg}>NEEDS YOU</Pill></Row>
       </Mini>
     ),
   },
   {
     key: "approvals", label: "Approvals", sub: "One-tap sign-off",
-    title: "Approve the first message in a tap.", desc: "Each first-contact draft is shown as the real email or SMS it'll become — review, edit inline, send.",
+    title: "Approve the first message in a tap.", desc: "Each first-contact draft is shown as the real email or SMS it'll become. Review, edit inline, send.",
     view: (
       <Mini>
         <Row><Av $fg={c.warn} $bg={c.warnBg}>BS</Av><span style={{ fontWeight: 600 }}>Brightline Studio</span><Pill $fg={c.warn} $bg={c.warnBg}>$1,000 · 7d</Pill></Row>
@@ -64,7 +64,7 @@ const TABS = [
   },
   {
     key: "invoices", label: "Invoices", sub: "The whole portfolio",
-    title: "Every invoice — and what's next.", desc: "A dense, searchable table with each invoice's status and the agent's next planned move. Click any row for the full decision trace.",
+    title: "Every invoice, and what's next.", desc: "A dense, searchable table with each invoice's status and the agent's next planned move. Click any row for the full decision trace.",
     view: (
       <Mini>
         <Row><Av $fg={c.ok} $bg={c.okBg}>SR</Av>Summit Roofing · $2,750<Pill $fg={c.faint} $bg="rgba(255,255,255,0.05)">final notice in 14d</Pill></Row>
@@ -75,12 +75,12 @@ const TABS = [
   },
   {
     key: "activity", label: "Activity", sub: "The audit trail",
-    title: "Every decision, logged.", desc: "The full audit timeline — filter by agent, prove safety, export the log. Zero unsafe messages, ever.",
+    title: "Every decision, logged.", desc: "The full audit timeline: filter by agent, prove safety, export the log. Zero unsafe messages, ever.",
     view: (
       <Mini>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 0" }}><span style={{ width: 9, height: 9, borderRadius: 9, background: c.ok }} /><span style={{ fontWeight: 600, fontSize: 13 }}>0 unsafe messages ever sent</span></div>
-        <Row><span style={{ width: 8, height: 8, borderRadius: 8, background: c.bad }} />Blocked a disputed draft — Cedar &amp; Co<Pill $fg={c.faint} $bg="rgba(255,255,255,0.05)">18m</Pill></Row>
-        <Row><span style={{ width: 8, height: 8, borderRadius: 8, background: c.ok }} />Sent reminder — Northwind<Pill $fg={c.faint} $bg="rgba(255,255,255,0.05)">11m</Pill></Row>
+        <Row><span style={{ width: 8, height: 8, borderRadius: 8, background: c.bad }} />Blocked a disputed draft: Cedar &amp; Co<Pill $fg={c.faint} $bg="rgba(255,255,255,0.05)">18m</Pill></Row>
+        <Row><span style={{ width: 8, height: 8, borderRadius: 8, background: c.ok }} />Sent reminder to Northwind<Pill $fg={c.faint} $bg="rgba(255,255,255,0.05)">11m</Pill></Row>
       </Mini>
     ),
   },
@@ -90,10 +90,10 @@ export default function Showcase() {
   const [active, setActive] = useState("overview");
   const tab = TABS.find((t) => t.key === active) ?? TABS[0];
   return (
-    <Section {...reveal}>
+    <Section id="console" style={{ scrollMarginTop: 24 }} {...reveal}>
       <Kicker>// the console</Kicker>
       <H2>One command center for your receivables.</H2>
-      <Lead>The dashboard is just a window onto the engine — four views over the same autonomous agent.</Lead>
+      <Lead>The dashboard is just a window onto the engine: four views over the same autonomous agent.</Lead>
       <Panel>
         <Scan><div /></Scan>
         <TopBar><span><span className="live" />settl console · live</span><span>4 views · one engine</span></TopBar>

@@ -1,14 +1,17 @@
 "use client";
 
-// Public landing page (/). Cinematic "Mission Control" design: dark, glassmorphism,
-// ambient glow + canvas mesh + faint grid behind frosted-glass content.
-// Dark-locked by design. Font loading is inlined (no separate layout needed).
+// Public landing page (/). Cinematic "Mission Control": one living, scroll-reactive
+// background behind the whole page, a hero, a scrollytelling "follow one invoice"
+// scene, the voice USP, then the rest. Font loading is inlined (no separate layout).
 
 import type { CSSProperties } from "react";
 import styled from "styled-components";
+import { motion, useScroll, useSpring } from "framer-motion";
 import { c } from "@/components/landing/palette";
-import MeshBackground from "@/components/landing/MeshBackground";
+import LivingBackground from "@/components/landing/LivingBackground";
 import Hero from "@/components/landing/Hero";
+import InvoiceJourney from "@/components/landing/InvoiceJourney";
+import VoiceHighlight from "@/components/landing/VoiceHighlight";
 import Explainer from "@/components/landing/Explainer";
 import Showcase from "@/components/landing/Showcase";
 import LandingSections from "@/components/landing/LandingSections";
@@ -25,29 +28,24 @@ const HREF =
 const Canvas = styled.div`
   position: relative;
   min-height: 100vh;
-  overflow: hidden;
-  background:
-    radial-gradient(1200px 720px at 50% -8%, rgba(109, 94, 246, 0.2), transparent 60%),
-    ${c.bg};
+  overflow-x: clip; /* the aurora/spotlight can overflow; clip is sticky-safe unlike hidden */
+  background: ${c.bg};
   color: ${c.ink};
   font-family: ${c.body};
   -webkit-font-smoothing: antialiased;
 `;
-const Bg = styled.div`
-  position: absolute; top: 0; left: 0; right: 0; height: 1040px; z-index: 0; pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
-  mask-image: linear-gradient(to bottom, #000 60%, transparent);
-`;
-const Grid = styled.div`
-  position: absolute; inset: 0; opacity: 0.45;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 54px 54px;
-  -webkit-mask-image: radial-gradient(ellipse 72% 55% at 50% 22%, #000, transparent 72%);
-  mask-image: radial-gradient(ellipse 72% 55% at 50% 22%, #000, transparent 72%);
-`;
 const Inner = styled.div`position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 24px 90px;`;
+const Progress = styled(motion.div)`
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; transform-origin: 0%;
+  background: linear-gradient(90deg, ${c.accent2}, ${c.accent});
+  box-shadow: 0 0 12px rgba(109, 94, 246, 0.6);
+`;
+
+function ScrollProgress() {
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, { stiffness: 130, damping: 30, restDelta: 0.001 });
+  return <Progress style={{ scaleX }} aria-hidden="true" />;
+}
 
 export default function LandingPage() {
   return (
@@ -55,12 +53,12 @@ export default function LandingPage() {
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link rel="stylesheet" href={HREF} />
       <Canvas>
-        <Bg>
-          <MeshBackground />
-          <Grid />
-        </Bg>
+        <ScrollProgress />
+        <LivingBackground />
         <Inner>
           <Hero />
+          <InvoiceJourney />
+          <VoiceHighlight />
           <Explainer />
           <Showcase />
           <LandingSections />
