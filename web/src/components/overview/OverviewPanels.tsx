@@ -29,20 +29,6 @@ const Two = styled.div`
   gap: 14px;
   margin-bottom: 14px;
 `;
-const Row = styled.div`
-  display: grid;
-  grid-template-columns: 36px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 11px 18px;
-  border-top: 1px solid ${({ theme }) => theme.border};
-`;
-const Avatar = styled.div<{ $fg: string; $bg: string }>`
-  width: 36px; height: 36px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700;
-  color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg};
-`;
 const Pill = styled.span<{ $fg: string; $bg: string }>`
   font-size: 12px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
   color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg};
@@ -60,10 +46,30 @@ const BtnPrimary = styled(Btn)`
   color: ${({ theme }) => theme.accentText};
   &:hover { filter: brightness(1.05); background: ${({ theme }) => theme.accent}; }
 `;
-const Line = styled.div`font-size: 14px; b { font-weight: 700; }`;
-const Sub = styled.div`font-size: 12.5px; color: ${({ theme }) => theme.textMuted}; margin-top: 2px;`;
 const Empty = styled.div`padding: 8px 18px 18px; font-size: 13.5px; color: ${({ theme }) => theme.textMuted};`;
 const ListPad = styled.div`padding: 0 10px 6px;`;
+
+// Readable, money-first approval row (fintech-dashboard best practice).
+const CHANNEL_ICON: Record<string, string> = { email: "✉", sms: "💬", voice: "📞" };
+const AItem = styled.div`
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center;
+  padding: 15px 18px; border-top: 1px solid ${({ theme }) => theme.border};
+`;
+const AIcon = styled.div<{ $fg: string; $bg: string }>`
+  width: 44px; height: 44px; border-radius: 12px; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg};
+`;
+const AName = styled.div`font-size: 14.5px; color: ${({ theme }) => theme.text}; b { font-weight: 700; }`;
+const AMeta = styled.div`display: flex; align-items: center; gap: 10px; margin-top: 5px; flex-wrap: wrap;`;
+const AAmount = styled.span`font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: ${({ theme }) => theme.text};`;
+const AOver = styled.span`display: flex; align-items: center; gap: 6px; font-size: 13px; color: ${({ theme }) => theme.textMuted}; .dot { width: 7px; height: 7px; border-radius: 50%; }`;
+
+function overdueColor(theme: AppTheme, days: number): string {
+  if (days >= 15) return theme.status.escalated.fg;
+  if (days >= 8) return theme.status.awaiting_approval.fg;
+  return theme.status.held.fg;
+}
 
 const goToApprovals = () => {
   if (typeof window !== "undefined") window.location.hash = "approvals";
@@ -90,27 +96,27 @@ function ApprovalsPanel() {
       {queued.length === 0 ? (
         <Empty>Nothing waiting on you right now.</Empty>
       ) : (
-        queued.slice(0, 4).map((inv) => (
-          <Row key={inv.invoice_id}>
-            <Avatar $fg={fg} $bg={bg}>
-              {inv.channel === "voice" ? "📞" : inv.debtor_name.slice(0, 2).toUpperCase()}
-            </Avatar>
-            <div>
-              <Line>
-                {inv.channel === "voice" ? (
-                  <>First voice call to <b>{inv.debtor_name}</b></>
-                ) : (
-                  <>First message to <b>{inv.debtor_name}</b></>
-                )}
-              </Line>
-              <Sub>
-                {formatMoney(inv.amount_due, inv.currency)} · {overdueLabel(inv.days_overdue)} ·{" "}
-                {inv.channel ?? "email"} draft
-              </Sub>
-            </div>
-            <Btn onClick={goToApprovals}>Review</Btn>
-          </Row>
-        ))
+        queued.slice(0, 4).map((inv) => {
+          const ch = inv.channel ?? "email";
+          return (
+            <AItem key={inv.invoice_id}>
+              <AIcon $fg={fg} $bg={bg}>{CHANNEL_ICON[ch] ?? inv.debtor_name.slice(0, 2).toUpperCase()}</AIcon>
+              <div>
+                <AName>
+                  {ch === "voice"
+                    ? <>First voice call to <b>{inv.debtor_name}</b></>
+                    : <>First message to <b>{inv.debtor_name}</b></>}
+                </AName>
+                <AMeta>
+                  <AAmount>{formatMoney(inv.amount_due, inv.currency)}</AAmount>
+                  <AOver><span className="dot" style={{ background: overdueColor(theme, inv.days_overdue) }} />{overdueLabel(inv.days_overdue)}</AOver>
+                  <Pill $fg={theme.textMuted} $bg={theme.surfaceAlt}>{ch}</Pill>
+                </AMeta>
+              </div>
+              <BtnPrimary onClick={goToApprovals}>Review</BtnPrimary>
+            </AItem>
+          );
+        })
       )}
     </Card>
   );
