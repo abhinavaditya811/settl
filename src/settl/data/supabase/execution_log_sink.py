@@ -12,13 +12,22 @@ callback to resolve one from the other (BoardState's own _invoices map). An
 entry whose invoice_id doesn't resolve to a known tenant (e.g. "-" placeholders
 for unmatched webhooks) is skipped, not guessed - same fail-safe posture as
 every other durable mirror in this codebase.
+
+write() is called once per agent decision - dozens to hundreds of times in a
+single refresh() batch. Opening a fresh connection (a TLS handshake to remote
+Supabase) per call turned refresh() into a multi-minute operation once tenant
+data grew past a handful of invoices, which meant every Cloud Run cold start
+paid it too. This sink holds one connection for its own process lifetime
+instead, reconnecting only if it's dropped.
 """
 
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
 
-from settl.data.supabase.connection import connect, to_jsonb
+import psycopg
+
+from settl.data.supabase.connection import open_connection, to_jsonb
 
 if TYPE_CHECKING:
     from settl.audit.execution_log import LogEntry
@@ -32,21 +41,29 @@ _INSERT_SQL = """
 class PostgresLogSink:
     def __init__(self, tenant_of: Callable[[str], str | None]) -> None:
         self._tenant_of = tenant_of
+        self._conn: psycopg.Connection | None = None
+
+    def _connection(self) -> psycopg.Connection:
+        if self._conn is None or self._conn.closed:
+            self._conn = open_connection()
+        return self._conn
 
     def write(self, entry: "LogEntry") -> None:
         tenant_id = self._tenant_of(entry.invoice_id)
         if not tenant_id:
             return  # unresolvable tenant (e.g. an unmatched webhook) - skip, never guess
-        with connect() as conn:
-            conn.execute(
-                _INSERT_SQL,
-                {
-                    "tenant_id": tenant_id,
-                    "invoice_id": entry.invoice_id,
-                    "agent": entry.agent,
-                    "decision": entry.decision,
-                    "reasoning": entry.reasoning,
-                    "details": to_jsonb(entry.details),
-                    "occurred_at": entry.timestamp,
-                },
-            )
+        params = {
+            "tenant_id": tenant_id,
+            "invoice_id": entry.invoice_id,
+            "agent": entry.agent,
+            "decision": entry.decision,
+            "reasoning": entry.reasoning,
+            "details": to_jsonb(entry.details),
+            "occurred_at": entry.timestamp,
+        }
+        try:
+            self._connection().execute(_INSERT_SQL, params)
+        except psycopg.OperationalError:
+            # connection dropped (e.g. idle timeout) - reconnect once and retry
+            self._conn = open_connection()
+            self._conn.execute(_INSERT_SQL, params)
