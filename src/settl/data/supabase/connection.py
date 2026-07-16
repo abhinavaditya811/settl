@@ -9,7 +9,10 @@ is a defense-in-depth backstop, not the access path.
 
 Short-lived connections, opened per call and closed via the context manager -
 this is a single-instance demo engine, not high-throughput, so a pool is
-premature (YAGNI).
+premature (YAGNI). The one exception is `PostgresLogSink`, which writes one
+row per agent decision (dozens-hundreds per `refresh()`) - `open_connection()`
+below hands it a single raw connection to hold for its own lifetime instead of
+paying a fresh TLS handshake per row.
 """
 
 from __future__ import annotations
@@ -46,6 +49,22 @@ def connect() -> Iterator[psycopg.Connection]:
         raise RuntimeError("SUPABASE_DB_URL is not set")
     with psycopg.connect(dsn, row_factory=dict_row) as conn:
         yield conn
+
+
+def open_connection() -> psycopg.Connection:
+    """A raw, caller-owned connection - not a context manager, doesn't auto-close.
+
+    For callers that hold a connection across many calls (see module docstring)
+    instead of one-per-call. Autocommit is on since there's no multi-statement
+    transaction to batch - each caller writes one row at a time.
+    """
+    load_dotenv()
+    dsn = os.environ.get("SUPABASE_DB_URL")
+    if not dsn:
+        raise RuntimeError("SUPABASE_DB_URL is not set")
+    conn = psycopg.connect(dsn, row_factory=dict_row)
+    conn.autocommit = True
+    return conn
 
 
 def to_jsonb(value: dict) -> Jsonb:
