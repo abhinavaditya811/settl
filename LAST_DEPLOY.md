@@ -6,4 +6,4 @@ on every push to master, even ones that deploy nothing. Do not edit by hand.
 
 - **Backend (Cloud Run)**: never
 - **Frontend (Vercel)**: never
-- **Workflow last ran**: never
+- **Workflow last ran**: 2026-07-16T13:54:02Z — commit `cefb2bd`
