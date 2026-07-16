@@ -80,9 +80,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Checked out with a repo-admin PAT, not the default GITHUB_TOKEN - required
+      # status checks on master block pushes lacking a passing check for that exact
+      # SHA (this commit never runs pr-checks.yml, so the default bot token gets
+      # rejected). enforce_admins is off, so a real admin's push is exempt.
       - uses: actions/checkout@v4
         with:
           ref: master
+          token: ${{ secrets.GH_PUSH_TOKEN }}
       - name: Update LAST_DEPLOY.md
         env:
           BACKEND_DEPLOYED: ${{ needs.deploy-backend.result == 'success' }}
