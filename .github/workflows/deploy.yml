@@ -73,16 +73,22 @@ jobs:
 
   record-deployment:
     needs: [changes, deploy-backend, deploy-frontend]
-    if: |
-      always() &&
-      (needs.deploy-backend.result == 'success' || needs.deploy-frontend.result == 'success')
+    # Always runs (even when both deploy jobs are skipped, e.g. a docs-only
+    # change) so "Workflow last ran" reflects every push to master, not just
+    # ones that actually deployed something.
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # Checked out with a repo-admin PAT, not the default GITHUB_TOKEN - required
+      # status checks on master block pushes lacking a passing check for that exact
+      # SHA (this commit never runs pr-checks.yml, so the default bot token gets
+      # rejected). enforce_admins is off, so a real admin's push is exempt.
       - uses: actions/checkout@v4
         with:
           ref: master
+          token: ${{ secrets.GH_PUSH_TOKEN }}
       - name: Update LAST_DEPLOY.md
         env:
           BACKEND_DEPLOYED: ${{ needs.deploy-backend.result == 'success' }}
@@ -106,8 +112,11 @@ jobs:
               "# Last deployment\n\n"
               "- **Backend (Cloud Run)**: never\n"
               "- **Frontend (Vercel)**: never\n"
+              "- **Workflow last ran**: never\n"
           )
           text = path.read_text() if path.exists() else default
+          if "Workflow last ran" not in text:
+              text += "- **Workflow last ran**: never\n"
 
           if backend_deployed:
               text = re.sub(
@@ -121,6 +130,13 @@ jobs:
                   f"- **Frontend (Vercel)**: {now} — commit `{sha}`",
                   text,
               )
+          # Unconditional - every run of this workflow updates this line,
+          # regardless of whether either side actually deployed.
+          text = re.sub(
+              r"- \*\*Workflow last ran\*\*:.*",
+              f"- **Workflow last ran**: {now} — commit `{sha}`",
+              text,
+          )
 
           path.write_text(text)
           PY
