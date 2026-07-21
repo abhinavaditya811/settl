@@ -5,8 +5,9 @@ from main.py (already at CLAUDE.md's line cap) - included via
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 
 from settl.api import oauth_google
@@ -20,6 +21,15 @@ router = APIRouter()
 _FRONTEND_URL = os.environ.get("SETTL_FRONTEND_URL", "http://localhost:3000")
 
 
+def _error_redirect(code: str) -> RedirectResponse:
+    """Every failure in this flow lands the browser back on the dashboard with a
+    short error code, never a raw JSON body - this whole flow is reached by real
+    browser navigations (Google's own redirect, or a plain <a> click), not a
+    fetch() call a frontend can catch and format. GmailConnect.tsx reads
+    ?gmail_error= and shows a friendly message."""
+    return RedirectResponse(f"{_FRONTEND_URL}/dashboard?gmail_error={quote(code)}")
+
+
 @router.get("/oauth/google/authorize")
 def google_oauth_authorize(tenant_id: str) -> RedirectResponse:
     """Redirect the vendor's browser to Google's consent screen. Caller-supplied
@@ -27,8 +37,8 @@ def google_oauth_authorize(tenant_id: str) -> RedirectResponse:
     Gmail" button uses /authorize/mine below instead."""
     try:
         return RedirectResponse(oauth_google.authorize_url(tenant_id))
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    except RuntimeError:
+        return _error_redirect("not_configured")
 
 
 @router.get("/oauth/google/authorize/mine")
@@ -39,8 +49,8 @@ def google_oauth_authorize_mine(scope: BoardScope = Depends(require_mine_scope))
     tenant_id = next(iter(scope.tenant_ids))
     try:
         return RedirectResponse(oauth_google.authorize_url(tenant_id))
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    except RuntimeError:
+        return _error_redirect("not_configured")
 
 
 @router.get("/oauth/google/status")
@@ -54,9 +64,14 @@ def google_oauth_status(scope: BoardScope = Depends(require_mine_scope)) -> dict
 @router.get("/oauth/google/callback")
 def google_oauth_callback(code: str, state: str) -> RedirectResponse:
     """Google redirects here after consent. Exchanges the code, encrypts +
-    persists the refresh token, then bounces back to the dashboard."""
+    persists the refresh token, then bounces back to the dashboard. A stale or
+    reused link (state token past its 10-minute TTL, or a state.py restart with
+    a different SETTL_TOKEN_ENCRYPTION_KEY) is a routine, expected failure here -
+    not a 500, and never a raw JSON body a real user would see."""
     try:
         oauth_google.handle_callback(code, state)
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(400, str(exc))
+    except ValueError:
+        return _error_redirect("expired_link")
+    except RuntimeError:
+        return _error_redirect("connect_failed")
     return RedirectResponse(f"{_FRONTEND_URL}/dashboard?gmail_connected=1")
