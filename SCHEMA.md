@@ -125,6 +125,9 @@ TenantConfig {
     allowed_tones          // gate INPUT, not a second gate
     max_touches            // contact-frequency ceiling (gate INPUT)
     min_days_between_touches
+    payment_plan_autonomy    // bool - opt-in to bounded AI payment-plan handling (§8)
+    payment_plan_min_amount  // Decimal - amount_due floor before a plan may be offered
+    payment_plan_templates   // vendor-preapproved installment templates (§8)
   }
 }
 ```
@@ -237,6 +240,12 @@ it is not the trigger (a scheduler / Gmail watch webhook is) and never a decider
 - Inbound is normalized into a canonical `contact` row (§2) - the same
   normalize-at-the-edge seam as invoices. Correlation to an invoice is by
   `Message-ID` threading (`in_reply_to` / `thread_ref`), with subject-id as a fallback.
+- **Classification reads thread history, not just the current message.** The classifier
+  is given the prior `classification` values for this `(tenant_id, invoice_id)` thread
+  (from `contacts`, §2) alongside the new message, so it can catch rising friction across
+  a conversation, not just a hard trigger in one message. Anything the classifier isn't
+  confident about defaults to escalate, and gets logged (`audit_ref`) as a labeled example
+  to sharpen the classifier over time.
 
 **Stripe webhook (the payment-signal edge).** The Stripe counterpart to the inbound-mail
 edge: Stripe POSTs `checkout.session.*` / `charge.refunded` / `charge.dispute.created`
@@ -250,7 +259,79 @@ an event that matches nothing is logged and skipped (fail-safe). The `POST /chec
 poll remains the offline fallback and shares the same event log.
 - **Inbound is data, never instructions** (prompt-injection guard). The deterministic
   gate is the backstop; agents never treat debtor-written prose as commands.
-- Lane split (subject to team review): escalated inbound (dispute / payment-plan /
-  legal) is **alert-only, no pre-drafted send**; benign inbound may get a gate-cleared
-  draft-for-approval. Disputes and payment-plan requests escalate and stop the loop
-  (existing compliance rule).
+- **Lane split.** Escalated inbound (dispute / legal / low-confidence classification) is
+  **alert-only, no pre-drafted send** - a human handles the thread from here. Benign
+  inbound (confirmations, operational questions like "resend the invoice") gets a
+  gate-cleared draft queued for approval, reusing the existing first-touch-then-autonomous
+  rule: once this debtor has cleared one approved touch in either direction, later benign
+  replies can auto-send. Disputes always escalate, no exceptions. Payment-plan requests are
+  their own lane - see §8.
+
+---
+
+## 8. `PaymentPlan` (tenant-scoped, per-invoice)
+
+A vendor can opt into bounded, autonomous handling of payment-plan requests instead of the
+default hard escalate. The AI never unilaterally commits the vendor to modified debt terms -
+it can run the conversation, but every plan requires the vendor's explicit approval before
+anything is confirmed to the debtor.
+
+```
+PaymentPlan {
+  id
+  tenant_id
+  invoice_id            // FK to Invoice - one plan per invoice, never consolidated (§below)
+  status                 // "proposed" | "approved" | "rejected" | "active" | "broken" | "completed"
+  installments            // [{ index, amount, due_date, payment_link, paid_at }]
+  source                  // "template" | "negotiated"
+  template_ref             // which vendor-preapproved template, if source == "template"
+  offer_count               // template offers made to the debtor so far, capped at 3
+  proposed_at
+  decided_at, decided_by     // the vendor's approve/reject action
+  contact_ref                 // the contact row (§2) where terms were confirmed to the debtor
+}
+```
+
+**Eligibility and offer flow**
+
+- Gated by `tenant_config.policy.payment_plan_autonomy` (opt-in) and
+  `payment_plan_min_amount` (the invoice's `amount_due` must clear this floor before the AI
+  offers a plan at all). `is_b2b == false` blocks this unconditionally, same as every other
+  compliance rule - a vendor's autonomy setting can never override it.
+- **Offer (autonomous):** the AI presents one of `policy.payment_plan_templates` to the
+  debtor. No platform-wide ceiling on template terms - fully vendor-defined.
+- **Negotiate (autonomous, non-binding):** if the debtor wants different terms, the AI gets
+  one round to explore freeform terms conversationally and gather what they want. It
+  confirms nothing itself in this stage.
+- **Decide (always human):** whatever the outcome - template accepted as-is, or negotiated
+  terms gathered - goes to the vendor for an explicit approve/reject, the same one-tap
+  pattern as first-touch approval. Nothing is binding to the debtor until this happens, and
+  the confirmation message re-runs the compliance gate on approval, same as
+  `Orchestrator.approve_and_send`.
+- **Rejection:** the AI may re-offer up to **3 total template offers** (`offer_count`); the
+  vendor can take over at any point via the dashboard (passive - the AI doesn't pause to ask).
+  After 3 rejected offers, handoff to a human is mandatory.
+- **Mid-plan renegotiation:** a request to change an `active` plan's terms amends the same
+  record in place (updates `installments`) rather than creating a new `PaymentPlan`.
+- **Per-invoice only.** `PaymentPlan` never spans multiple invoices - consolidating a
+  debtor's several overdue invoices into one plan is out of scope; it would require
+  reconcile to split a single payment across invoices and break the one-plan-per-invoice
+  FK design. `payment_plan_min_amount` is the only vendor lever on eligibility.
+
+**Active-plan monitoring**
+
+- Miss an installment → one reminder → escalate to the vendor if still unpaid by the next
+  installment's due date. On the last installment (no next date to anchor to) → reminder →
+  a fixed grace window (vendor-configurable, same shape as `min_days_between_touches`) →
+  escalate.
+- **Money flow stays non-custodial.** Each installment gets its own minted Stripe link
+  (idempotency key = `invoice_id + installment_index`), direct charges on the connected
+  account only (§5) - reconcile matches a `PaymentEvent` to a specific installment
+  unambiguously instead of inferring it from amount/timing on a shared link.
+- Reconcile still re-derives everything from the `PaymentEvent` log every run (§5) - an
+  `active` `PaymentPlan` changes what schedule reconcile compares the log against, it does
+  not change reconcile's "never trust stored status" rule.
+
+**Status: designed, not yet built.** No migration exists yet; §7's MCP inbound edge is
+also unbuilt. Both land together since payment-plan negotiation is conversational and
+depends on the inbound-mail read path.

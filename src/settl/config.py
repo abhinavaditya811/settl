@@ -21,10 +21,21 @@ _DEFAULT_ENV = Path(__file__).resolve().parents[2] / ".env"
 # (e.g. gemini-2.5-flash) to override. The agents are fail-safe either way.
 DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
+# High-volume routing model (CLAUDE.md: Flash for orchestrator-style routing, Pro for
+# judgment). Used by the inbound classifier (agents/inbound) - classifying a reply's
+# lane is routing, not drafting/strategy judgment.
+DEFAULT_GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
+
 
 def gemini_model_name(override: str | None = None) -> str:
     """Resolve the model id: explicit override → GEMINI_MODEL env → shared default."""
     return override or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+
+
+def gemini_flash_model_name(override: str | None = None) -> str:
+    """Resolve the Flash routing-model id: explicit override → GEMINI_FLASH_MODEL env
+    → shared default."""
+    return override or os.environ.get("GEMINI_FLASH_MODEL", DEFAULT_GEMINI_FLASH_MODEL)
 
 
 def load_dotenv(path: str | Path | None = None) -> dict[str, str]:

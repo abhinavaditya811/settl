@@ -61,6 +61,16 @@ class PriorContact(BaseModel):
     direction: ContactDirection
     channel: Channel
     summary: str = ""
+    # Threading + classification (SCHEMA.md §2/§7). Outbound sets provider_message_id
+    # (the RFC822 Message-ID); inbound threads back via in_reply_to/thread_ref.
+    # classification is the inbound lane ("benign" | "dispute" | "payment-plan-request" |
+    # ... ) set by the inbound classifier - agents/inbound/classifier.py. None for
+    # outbound touches and for rows written before classification existed.
+    provider_message_id: str | None = None
+    in_reply_to: str | None = None
+    thread_ref: str | None = None
+    classification: str | None = None
+    audit_ref: str | None = None
 
 
 class Invoice(BaseModel):

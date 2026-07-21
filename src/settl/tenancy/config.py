@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import time
+from decimal import Decimal
 from enum import Enum
 
 
@@ -141,6 +142,13 @@ class Policy:
     max_touches: int = 3  # contact-frequency ceiling (feeds the gate)
     frequency_window_days: int = 7
     min_days_between_touches: int = 2
+    # Payment-plan autonomy opt-in (SCHEMA.md §8). Off by default - a payment-plan
+    # request escalates to a human unconditionally unless a tenant explicitly opts
+    # in AND the invoice clears their own amount floor. `payment_plan_templates`
+    # (the vendor-preapproved installment options) lands with the offer/negotiate
+    # agent (agents/payment_plan/), not here, since nothing reads it yet.
+    payment_plan_autonomy: bool = False
+    payment_plan_min_amount: Decimal | None = None
 
 
 DEFAULT_POLICY = Policy()

@@ -16,6 +16,7 @@ the message-content rules). Every evaluation is written to the execution log.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import Enum
 
 from settl.audit.execution_log import ExecutionLog
@@ -25,12 +26,12 @@ from settl.governance import RuleStore, guardrail_violations, waived_codes
 from settl.schema.invoice import Channel, Invoice
 
 # Run order is just for readable reasoning; all violations are collected.
-# rule_contact_frequency is run separately (it takes per-tenant policy bounds).
+# rule_contact_frequency and rule_payment_plan_request are run separately - both
+# take per-tenant policy bounds rather than just the invoice.
 _INVOICE_RULES = (
     rules.rule_consumer_debt,
     rules.rule_disputed,
     rules.rule_inbound_dispute,
-    rules.rule_payment_plan_request,
     rules.rule_first_contact,
 )
 _MESSAGE_RULES = (
@@ -69,12 +70,19 @@ class ComplianceGate:
         *,
         frequency_window: int | None = None,
         frequency_max: int | None = None,
+        payment_plan_autonomy: bool = False,
+        payment_plan_min_amount: Decimal | None = None,
         rules_store: RuleStore | None = None,
     ) -> None:
         self._log = log
         # Per-tenant contact-frequency bounds (from policy); None → module defaults.
         self._frequency_window = frequency_window
         self._frequency_max = frequency_max
+        # Payment-plan autonomy opt-in (SCHEMA.md §8) - off unless a tenant enables
+        # it; a vendor can only unlock the PaymentPlan lane, never bypass any other
+        # compliance rule (is_b2b, dispute, etc. are untouched by this).
+        self._payment_plan_autonomy = payment_plan_autonomy
+        self._payment_plan_min_amount = payment_plan_min_amount
         # Operator guardrails (human-in-the-loop feedback). They can only make the gate
         # STRICTER (add escalation) or waive a SOFT rule; a legal/consumer/dispute code
         # can never be waived (enforced in governance.waived_codes). Gate stays authority.
@@ -94,6 +102,13 @@ class ComplianceGate:
         violations.extend(
             rules.rule_contact_frequency(
                 invoice, self._frequency_window, self._frequency_max
+            )
+        )
+        violations.extend(
+            rules.rule_payment_plan_request(
+                invoice,
+                autonomy_enabled=self._payment_plan_autonomy,
+                min_amount=self._payment_plan_min_amount,
             )
         )
         if message is not None:

@@ -45,3 +45,31 @@ def test_malformed_invoice_is_quarantined():
     issues = next(iss for inv, iss in quarantined if inv.invoice_id == "INV-011")
     fields = {i.field for i in issues}
     assert {"amount_due", "contact"} <= fields
+
+
+def test_prior_contact_threading_fields_default_to_none():
+    # Existing fixture rows never set these - round-tripping a bare contact must
+    # not require them (backward compatible with every synthetic record today).
+    inv = _by_id(load_synthetic_invoices())["INV-002"]
+    c = inv.prior_contacts[0]
+    assert c.provider_message_id is None
+    assert c.in_reply_to is None
+    assert c.thread_ref is None
+    assert c.classification is None
+    assert c.audit_ref is None
+
+
+def test_prior_contact_carries_classification_when_set():
+    from settl.schema.invoice import Channel, ContactDirection, PriorContact
+
+    c = PriorContact(
+        occurred_on=reference_date(),
+        direction=ContactDirection.INBOUND,
+        channel=Channel.EMAIL,
+        summary="can I pay in installments?",
+        provider_message_id="<abc@vendor>",
+        thread_ref="thread-1",
+        classification="payment-plan-request",
+    )
+    assert c.classification == "payment-plan-request"
+    assert c.thread_ref == "thread-1"

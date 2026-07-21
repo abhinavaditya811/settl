@@ -124,6 +124,8 @@ class Orchestrator:
             log=log,
             frequency_window=config.policy.frequency_window_days,
             frequency_max=config.policy.max_touches,
+            payment_plan_autonomy=config.policy.payment_plan_autonomy,
+            payment_plan_min_amount=config.policy.payment_plan_min_amount,
             rules_store=rules_store,
         )
 

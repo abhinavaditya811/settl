@@ -45,6 +45,35 @@ def test_payment_plan_request_escalates():
     assert "PAYMENT_PLAN_REQUEST" in result.codes
 
 
+def test_payment_plan_request_still_escalates_when_autonomy_off_by_default():
+    # A gate built with no config at all (autonomy defaults False) behaves exactly
+    # like before this feature existed - no silent behavior change for anyone who
+    # hasn't opted in.
+    gate = ComplianceGate()
+    result = gate.evaluate(_by_id()["INV-006"], BENIGN)
+    assert "PAYMENT_PLAN_REQUEST" in result.codes
+
+
+def test_payment_plan_request_clears_when_tenant_opts_in_and_amount_qualifies():
+    gate = ComplianceGate(payment_plan_autonomy=True, payment_plan_min_amount=1000)
+    result = gate.evaluate(_by_id()["INV-006"], BENIGN)  # amount_due = 3100.00
+    assert "PAYMENT_PLAN_REQUEST" not in result.codes
+
+
+def test_payment_plan_request_still_escalates_below_vendor_threshold():
+    gate = ComplianceGate(payment_plan_autonomy=True, payment_plan_min_amount=5000)
+    result = gate.evaluate(_by_id()["INV-006"], BENIGN)  # 3100.00 < 5000 floor
+    assert "PAYMENT_PLAN_REQUEST" in result.codes
+
+
+def test_payment_plan_autonomy_never_overrides_consumer_debt_block():
+    # is_b2b == False is unconditional (CLAUDE.md) - payment-plan autonomy must
+    # never be a backdoor around it.
+    gate = ComplianceGate(payment_plan_autonomy=True, payment_plan_min_amount=0)
+    result = gate.evaluate(_by_id()["INV-003"], BENIGN)  # is_b2b = False
+    assert "B2B_ONLY" in result.codes
+
+
 def test_inbound_dispute_reply_escalates_even_if_status_open():
     result = ComplianceGate().evaluate(_by_id()["INV-024"], BENIGN)
     assert result.decision is GateDecision.ESCALATE
