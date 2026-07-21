@@ -48,6 +48,9 @@ class InvoiceDetail(InvoiceCard):
     message: str | None = None  # the gated draft - keeps the {{payment_link}} placeholder
     message_preview: str | None = None  # read-only: placeholder resolved to the real link
     steps: list[StepView] = []
+    # ISO timestamp - when this invoice's tenant mailbox was last polled (scheduled
+    # or manual), None if never. Same source as /health's inbound_poll.last_polled_at.
+    last_inbound_poll_at: str | None = None
 
 
 class BoardSummary(BaseModel):

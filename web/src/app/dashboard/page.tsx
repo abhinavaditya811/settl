@@ -12,6 +12,7 @@ import { getBoard } from "@/lib/api";
 import { Loading } from "@/components/ui";
 import BoardShell from "@/components/dashboard/BoardShell";
 import ZeroState from "@/components/zero/ZeroState";
+import GmailConnect from "@/components/GmailConnect";
 
 const Centered = styled.div`
   min-height: 100vh;
@@ -92,6 +93,7 @@ export default function DashboardPage() {
             <span className="who" title={session.user.email ?? undefined}>
               {session.user.email}
             </span>
+            <GmailConnect />
             <button onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
           </Account>
         )

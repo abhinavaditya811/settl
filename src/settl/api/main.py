@@ -41,6 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from settl.adapters.csv_adapter import CsvFormatError
 from settl.adapters.manual_entry import ManualInvoiceInput
+from settl.api import inbound_poll_scheduler
 from settl.api.identity import BoardScope, board_scope, require_mine_scope
 from settl.api.schemas import (
     ActivityEntry,
@@ -81,28 +82,25 @@ from settl.voice.webhook import ingest_retell_webhook
 # Where the execution-log JSONL is written. Defaults to the repo's runs/ dir for
 # local dev; override with SETTL_RUNS_DIR on hosts with a read-only or
 # package-relative filesystem (e.g. SETTL_RUNS_DIR=/tmp/runs on Cloud Run).
-_RUNS = Path(
-    os.environ.get("SETTL_RUNS_DIR", Path(__file__).resolve().parents[3] / "runs")
-)
+_RUNS = Path(os.environ.get("SETTL_RUNS_DIR", Path(__file__).resolve().parents[3] / "runs"))
 _RUNS.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Settl Engine API", version="0.1.0")
+state = BoardState(log_path=_RUNS / "dashboard.jsonl")
+# Voice-safety state the Retell webhook writes to. Per-process like BoardState;
+# moves to the durable store with everything else (VOICE_AGENT_SPEC §10).
+voice_do_not_call = DoNotCallRegistry()
+
+# lifespan runs the scheduled inbound-mail poll (SCHEMA.md §7) as a background task.
+app = FastAPI(title="Settl Engine API", version="0.1.0", lifespan=inbound_poll_scheduler.lifespan_for(state))
 app.include_router(oauth_router)
 
-_origins = os.environ.get(
-    "SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-).split(",")
+_origins = os.environ.get("SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _origins if o.strip()],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-
-state = BoardState(log_path=_RUNS / "dashboard.jsonl")
-# Voice-safety state the Retell webhook writes to. Per-process like BoardState;
-# moves to the durable store with everything else (VOICE_AGENT_SPEC §10).
-voice_do_not_call = DoNotCallRegistry()
 
 
 # -- projectors ---------------------------------------------------------------
@@ -138,6 +136,7 @@ def _detail(inv: Invoice, res: PipelineResult) -> InvoiceDetail:
         message=res.message,
         message_preview=preview,
         steps=[StepView(agent=s.agent, decision=s.decision, reasoning=s.reasoning) for s in res.steps],
+        last_inbound_poll_at=inbound_poll_scheduler.poll_status()["last_polled_at"].get(inv.tenant_id),
     )
 
 
@@ -149,8 +148,10 @@ def health() -> dict:
     return {
         "status": "ok",
         "live_send": state.live_send_enabled,
+        "inbound_reply_live": state.inbound_reply_live_enabled,
         "drafting": "gemini" if state.gemini_enabled else "template",
         "payments": "stripe" if state.stripe_enabled else "none",
+        "inbound_poll": inbound_poll_scheduler.poll_status(),
     }
 
 
@@ -276,9 +277,7 @@ def offer_payment_plan(invoice_id: str) -> PaymentPlanView:
 
 
 @app.post("/invoices/{invoice_id}/payment-plan/decide", response_model=PaymentPlanDecisionResponse)
-def decide_payment_plan_route(
-    invoice_id: str, body: PaymentPlanDecisionBody
-) -> PaymentPlanDecisionResponse:
+def decide_payment_plan_route(invoice_id: str, body: PaymentPlanDecisionBody) -> PaymentPlanDecisionResponse:
     """Vendor approve/reject on an offered plan. The engine decides the outcome
     (re-running the compliance gate on approval) - this route only projects it."""
     if not state.get(invoice_id):
@@ -298,7 +297,9 @@ def guardrails(scope: BoardScope = Depends(board_scope)) -> list[GuardrailView]:
 def check_inbound_mail(tenant_id: str) -> CheckInboundMailResponse:
     """Poll one tenant's Gmail for new replies (SCHEMA.md §7). No-op ([]) if
     that tenant never connected Gmail. Mirrors /check-payments' shape."""
-    return CheckInboundMailResponse(changed=state.poll_inbound_mail(tenant_id))
+    changed = state.poll_inbound_mail(tenant_id)
+    inbound_poll_scheduler.record_poll(tenant_id)
+    return CheckInboundMailResponse(changed=changed)
 
 
 @app.post("/check-payments", response_model=CheckPaymentsResponse)

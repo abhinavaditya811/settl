@@ -13,12 +13,15 @@ fail-safe falls back to the regex backstop (classifier.py) rather than to a fixe
 from __future__ import annotations
 
 import os
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
+
+from pydantic import BaseModel, Field
 
 from settl.agents.inbound.classifier import (
     InboundClassification,
     InboundLane,
     classify_deterministic,
+    thread_classifications,
 )
 from settl.config import gemini_flash_model_name, load_dotenv
 from settl.schema.invoice import Invoice
@@ -26,6 +29,34 @@ from settl.schema.invoice import Invoice
 # Below this, the model's own answer is not trusted enough to act on - escalate
 # instead of guessing (matches the earlier agreed rule: low confidence -> escalate).
 _CONFIDENCE_ESCALATE_THRESHOLD = 0.6
+
+# Structured output schema (google-genai response_schema, verified against the
+# installed 2.10.0 SDK - GenerateContentConfig.response_schema accepts a plain
+# type/BaseModel and GenerateContentResponse.parsed returns a validated instance,
+# not hand-coded from memory per CLAUDE.md's SDK-verification rule). Four real
+# lanes only - ESCALATE_LOW_CONFIDENCE is a threshold WE apply below, never a
+# choice the model itself makes.
+class _ClassificationOutput(BaseModel):
+    lane: Literal["benign", "dispute", "opt_out", "payment_plan_request"]
+    confidence: float = Field(ge=0, le=1)
+    reasoning: str
+
+
+_LANE_GUIDE = """Classify this debtor's email reply into exactly one lane:
+
+- "dispute": the debtor disputes the debt, charge, or invoice's validity
+  (e.g. "this isn't mine", "I already paid this", "this amount is wrong").
+- "opt_out": the debtor asks to stop being contacted, on any channel - email,
+  calls, texts (e.g. "stop emailing me", "don't send me such emails",
+  "unsubscribe"). Judge the INTENT, not an exact phrase - opt-out requests are
+  worded many different ways.
+- "payment_plan_request": the debtor asks to pay in installments, over time,
+  or requests a payment plan.
+- "benign": anything else - confirmations, questions, a promise to pay, or
+  general acknowledgment with no escalation signal.
+
+Give a confidence from 0 to 1, and a short, clear reasoning - a human reviewer
+reads it directly, so state plainly what in the message drove your answer."""
 
 
 @runtime_checkable
@@ -83,9 +114,25 @@ class GeminiInboundClassifierModel:
         return result
 
     def _call_model(self, invoice: Invoice, message_text: str) -> InboundClassification:
-        # Verify against current Gemini/ADK structured-output docs before wiring this
-        # for real (CLAUDE.md: the SDK surface moves fast, don't hand-code from memory).
-        # Expected to prompt for {lane, confidence, reasoning} as structured JSON over
-        # message_text + thread_classifications(invoice), constrained to InboundLane's
-        # values. Until implemented, defer to the regex backstop.
-        raise NotImplementedError
+        from google.genai import types
+
+        history = thread_classifications(invoice)
+        history_note = (
+            f"Prior classifications in this thread (oldest first): {', '.join(history)}"
+            if history else "No prior classifications in this thread."
+        )
+        prompt = f"{_LANE_GUIDE}\n\n{history_note}\n\nDebtor's message:\n{message_text}"
+
+        response = self._get_client().models.generate_content(
+            model=self._model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_ClassificationOutput,
+                temperature=0.1,  # classification, not creative generation
+            ),
+        )
+        parsed = response.parsed
+        if not isinstance(parsed, _ClassificationOutput):
+            raise ValueError(f"unexpected structured-output shape: {parsed!r}")
+        return InboundClassification(InboundLane(parsed.lane), parsed.confidence, parsed.reasoning)

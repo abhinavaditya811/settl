@@ -50,6 +50,19 @@ def _repeat_payer(invoice_id="INV-005", tenant_id="t_demo") -> Invoice:
     )
 
 
+def _new_debtor(invoice_id="INV-777", tenant_id="t_demo") -> Invoice:
+    today = date.today()
+    return Invoice(
+        invoice_id=invoice_id, tenant_id=tenant_id, source=Source.STRIPE, source_ref="x",
+        amount_due=Decimal("500.00"), currency="USD",
+        issue_date=today - timedelta(days=50), due_date=today - timedelta(days=20),
+        status=InvoiceStatus.OPEN, debtor_name="NewCo", debtor_email="ap@newco.test",
+        is_b2b=True, late_fee_allowed=True, as_of_date=today,
+        payment_link="https://buy.stripe.com/test_y",
+        prior_contacts=[],  # first contact - no prior outbound touches
+    )
+
+
 def _msg(**overrides) -> GmailMessage:
     defaults = dict(
         message_id="<reply-001@gmail>", thread_id="t1", in_reply_to="<orig-001@settl>",
@@ -125,7 +138,7 @@ def test_already_processed_true_when_message_id_already_recorded(monkeypatch):
 def test_handle_message_routes_to_orchestrator_when_no_plan_in_flight():
     inv = _repeat_payer()
     board = _board()
-    result = board.handle_message(inv, _msg(), plan=None)
+    result, _ = board.handle_message(inv, _msg(), plan=None)
     # A benign reply from a repeat payer (is_new_debtor False) auto-sends,
     # same as test_orchestrator.py's handle_inbound coverage.
     assert result.terminal_state is TerminalState.SENT
@@ -139,7 +152,7 @@ def test_handle_message_routes_to_negotiation_when_plan_is_proposed():
         installments=(Installment(index=0, amount=Decimal("300"), due_date=date.today()),),
     )
     board = _board()
-    result = board.handle_message(inv, _msg(body_text="that works for me"), plan=plan)
+    result, _ = board.handle_message(inv, _msg(body_text="that works for me"), plan=plan)
     # Never auto-sends - the vendor's existing approve/reject flow still owns
     # anything reaching the debtor.
     assert result.terminal_state is TerminalState.HELD
@@ -150,9 +163,23 @@ def test_handle_message_ignores_a_completed_plan():
     inv = _repeat_payer()
     plan = PaymentPlan(id="pp-1", tenant_id="t_demo", invoice_id="INV-005", status=PaymentPlanStatus.COMPLETED)
     board = _board()
-    result = board.handle_message(inv, _msg(), plan=plan)
+    result, _ = board.handle_message(inv, _msg(), plan=plan)
     # A completed plan is no longer "in flight" - back to the generic lanes.
     assert result.terminal_state is TerminalState.SENT
+
+
+def test_handle_message_returns_invoice_with_the_new_inbound_contact_appended(monkeypatch):
+    # Regression: poll() must see the appended contact on the NEXT message, or
+    # rule_contact_frequency evaluates every reply against a stale snapshot
+    # forever and can never trip - the actual cause of an observed mail loop.
+    monkeypatch.setattr(imb.db, "supabase_enabled", lambda: True)
+    monkeypatch.setattr(imb.db, "write_contact", lambda *a, **k: None)
+    inv = _repeat_payer()
+    starting = len(inv.prior_contacts)
+    board = _board()
+    _, updated = board.handle_message(inv, _msg(), plan=None)
+    assert len(updated.prior_contacts) == starting + 1
+    assert updated.prior_contacts[-1].direction is ContactDirection.INBOUND
 
 
 # --- poll ----------------------------------------------------------------------
@@ -202,6 +229,60 @@ def test_poll_is_fail_safe_when_fetch_raises():
         raise RuntimeError("no credentials")
 
     assert board.poll("t_demo", {}, {}, fetch=boom, send=lambda *a, **k: None) == []
+
+
+def test_poll_does_not_replace_a_pending_approval_with_a_new_one():
+    # Regression: a new-debtor invoice sitting AWAITING_APPROVAL (never actioned,
+    # so is_new_debtor is still True) got a SECOND benign reply before the human
+    # approved the first - the poller drafted and held a totally different
+    # message, silently overwriting the pending one in the board's results dict.
+    inv = _new_debtor()
+    invoices = {inv.invoice_id: inv}
+    board = _board()
+    subject = f"Re: [Settl] Invoice reminder - {inv.invoice_id}"
+
+    first = board.poll(
+        "t_demo", invoices, {},
+        fetch=lambda tenant_id: [_raw(_msg(message_id="<reply-1@gmail>", subject=subject))],
+        send=lambda *a, **k: "<sent@gmail>",
+    )
+    assert first[0][1].terminal_state is TerminalState.AWAITING_APPROVAL
+    first_message = first[0][1].message
+    results = {inv.invoice_id: first[0][1]}
+
+    second = board.poll(
+        "t_demo", invoices, {}, results,
+        fetch=lambda tenant_id: [
+            _raw(_msg(message_id="<reply-2@gmail>", body_text="just checking in", subject=subject))
+        ],
+        send=lambda *a, **k: "<sent@gmail>",
+    )
+
+    assert second == []  # suppressed - not reported as a board change
+    assert results[inv.invoice_id].message == first_message  # pending draft untouched
+
+
+def test_poll_stops_auto_replying_once_contact_frequency_limit_trips():
+    # Regression: an observed real mail loop - poll() used to hand rule_contact_
+    # frequency the SAME stale invoice snapshot every cycle (fixed to reuse the
+    # `invoices` dict exactly as BoardState.poll_inbound_mail does across real
+    # poll cycles), so it never saw its own prior auto-replies and never tripped.
+    # FREQUENCY_MAX_TOUCHES defaults to 3 within a 7-day window.
+    inv = _repeat_payer()  # 1 prior contact, but 10 days old - outside the window
+    invoices = {inv.invoice_id: inv}
+    board = _board()
+    terminal_states = []
+    for i in range(5):
+        changed = board.poll(
+            "t_demo", invoices, {},
+            fetch=lambda tenant_id, i=i: [_raw(_msg(message_id=f"<reply-{i}@gmail>"))],
+            send=lambda *a, **k: "<sent@gmail>",
+        )
+        terminal_states.append(changed[0][1].terminal_state)
+
+    assert terminal_states.count(TerminalState.SENT) == 3
+    assert terminal_states[3] is TerminalState.ESCALATED
+    assert terminal_states[4] is TerminalState.ESCALATED
 
 
 def test_poll_does_not_send_for_a_held_negotiation_result():

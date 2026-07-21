@@ -185,7 +185,7 @@ pinned refactor - no new engine capability required.
 - [ ] `tests/test_e2e.py` - **~130** - system invariants on the real stack (SDK mocked): no consumer/disputed invoice ever sent, paid never chased, ≥1 legitimate send, every invoice logged, and a flag→guardrail re-orchestration holds.
 - [ ] Live-drafting red-team pass - drive **real Gemini** drafts through the gate (extend `tests/test_gate_redteam.py`); prove the gate still catches an LLM that strays.
 - [ ] Demo polish - final "AI knows when *not* to act" trace-output narrative for the 3-min video.
-- [ ] **Tech debt (pinned):** extract the reconcile/webhook cluster (`check_payments`, `ingest_webhook`, `_record_event`, `_correlate`, `_apply_reconcile` + their state) out of `BoardState` into a `ReconciliationDesk` collaborator (`api/reconcile_ops.py`) - SRP + gives `api/state.py` headroom under the 400-line cap. Behavior-preserving; `test_api.py`/`test_webhook.py` are the regression net. (Rest of the codebase already follows SOLID - this is the one real smell.)
+- [x] **Tech debt (pinned):** extract the reconcile/webhook cluster (`check_payments`, `ingest_webhook`, `_record_event`, `_correlate`, `_apply_reconcile` + their state) out of `BoardState` into a `ReconciliationDesk` collaborator (`api/reconcile_ops.py`) - SRP + gives `api/state.py` headroom under the 400-line cap. Behavior-preserving; `test_api.py`/`test_webhook.py` are the regression net (both green). `state.py` is now 373 lines, `reconcile_ops.py` 219.
 
 **Done when:** a single recorded real-stack run shows drafting → gate → send → reconcile in
 the audit trail, `test_e2e.py` invariants pass (SDK mocked), the GCP doc lets a fresh clone

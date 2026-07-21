@@ -54,7 +54,7 @@ def test_check_payments_auto_reconciles_a_paid_link():
         def paid_sessions(self, link_id, currency="usd"):
             return [("pi_test", Decimal("1000000"))]  # >= any invoice amount → PAID
 
-    board._minter = _FakeMinter()
+    board._reconcile._minter = _FakeMinter()
     assert board.check_payments() == [target]
     assert board._results[target].terminal_state is TerminalState.RECOVERED
     assert board.check_payments() == []  # idempotent: already recovered
@@ -70,8 +70,8 @@ def _sent_target(board):
 
 def _stub_verify(monkeypatch, event):
     """Skip signature crypto: feed a raw event straight into the real parse_event path."""
-    from settl.api import state as state_mod
-    monkeypatch.setattr(state_mod, "verify_event", lambda payload, sig, secret: event)
+    from settl.api import reconcile_ops as reconcile_ops_mod
+    monkeypatch.setattr(reconcile_ops_mod, "verify_event", lambda payload, sig, secret: event)
 
 
 def test_webhook_recovers_an_invoice_with_no_tab_open(monkeypatch):

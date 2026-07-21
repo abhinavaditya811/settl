@@ -79,21 +79,26 @@ class InboundMailBoard:
 
     def handle_message(
         self, invoice: Invoice, msg: GmailMessage, plan: PaymentPlan | None
-    ) -> PipelineResult:
+    ) -> tuple[PipelineResult, Invoice]:
+        """Returns the pipeline result AND the invoice with this message's
+        contact appended - the caller (poll()) must write it back into its
+        ``invoices`` dict, or rule_contact_frequency evaluates every future
+        message on a stale, ever-shrinking-relative touch count (a real
+        feedback loop: an auto-reply that never counts against itself)."""
         if plan is not None and plan.status in _NEGOTIABLE_PLAN_STATUSES:
             return self._handle_plan_negotiation(invoice, msg, plan)
         result = self._orchestrator.handle_inbound(invoice, msg.body_text)
         classification = next(
             (s.decision for s in result.steps if s.agent == "inbound_classifier"), None
         )
-        self._write_inbound_contact(invoice, msg, classification=classification)
-        return result
+        invoice = self._write_inbound_contact(invoice, msg, classification=classification)
+        return result, invoice
 
     def _handle_plan_negotiation(
         self, invoice: Invoice, msg: GmailMessage, plan: PaymentPlan
-    ) -> PipelineResult:
+    ) -> tuple[PipelineResult, Invoice]:
         negotiation = read_response(msg.body_text)
-        self._write_inbound_contact(
+        invoice = self._write_inbound_contact(
             invoice, msg, classification=f"payment_plan_{negotiation.outcome.value}"
         )
         if self._log is not None:
@@ -104,24 +109,28 @@ class InboundMailBoard:
             )
         # Confirms nothing itself - the vendor's existing approve/reject action
         # (Phase 4, unchanged) is still the only path that ever sends anything.
-        return PipelineResult(
+        result = PipelineResult(
             invoice.invoice_id, TerminalState.HELD,
             steps=[PipelineStep("payment_plan_negotiate", negotiation.outcome.value, negotiation.reasoning)],
             detail="Debtor responded to the payment-plan offer - awaiting vendor decision.",
         )
+        return result, invoice
 
     def _write_inbound_contact(
         self, invoice: Invoice, msg: GmailMessage, *, classification: str | None
-    ) -> None:
-        if not db.supabase_enabled():
-            return
+    ) -> Invoice:
+        # In-memory history updates unconditionally - it's what keeps
+        # rule_contact_frequency correct across poll cycles in THIS process,
+        # independent of whether Supabase is armed to persist it durably too.
         contact = PriorContact(
             occurred_on=msg.occurred_at.date(), direction=ContactDirection.INBOUND,
             channel=Channel.EMAIL, summary=msg.body_text[:500],
             provider_message_id=msg.message_id, in_reply_to=msg.in_reply_to,
             thread_ref=msg.thread_id, classification=classification,
         )
-        db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        if db.supabase_enabled():
+            db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        return invoice.model_copy(update={"prior_contacts": [*invoice.prior_contacts, contact]})
 
     # -- poll ---------------------------------------------------------------
 
@@ -130,12 +139,14 @@ class InboundMailBoard:
         tenant_id: str,
         invoices: dict[str, Invoice],
         plans: dict[str, PaymentPlan],
+        results: dict[str, PipelineResult] | None = None,
         *,
         fetch: Fetch | None = None,
         send: Send | None = None,
     ) -> list[tuple[str, PipelineResult]]:
         fetch = fetch or _default_fetch
         send = send or _default_send
+        results = results or {}
         try:
             raw_messages = fetch(tenant_id)
         except Exception as exc:
@@ -153,13 +164,35 @@ class InboundMailBoard:
                 continue
 
             invoice = invoices[invoice_id]
-            result = self.handle_message(invoice, msg, plans.get(invoice_id))
+            result, invoice = self.handle_message(invoice, msg, plans.get(invoice_id))
+            invoices[invoice_id] = invoice  # keep in-memory history current for the
+                                             # next message's rule_contact_frequency check,
+                                             # regardless of whether the board result below
+                                             # ends up suppressed
+            current = results.get(invoice_id)
+            if (
+                result.terminal_state is TerminalState.AWAITING_APPROVAL
+                and current is not None
+                and current.terminal_state is TerminalState.AWAITING_APPROVAL
+            ):
+                # A draft is already sitting there un-actioned - don't silently swap
+                # it for an unrelated one just because a benign reply came in. Any
+                # more urgent lane (dispute/opt-out/payment-plan) still produces
+                # ESCALATED here, never AWAITING_APPROVAL, so it's never suppressed.
+                self._log_skip(
+                    f"{invoice_id}: reply noted, but a draft is already awaiting "
+                    "approval - not replacing it with a new one"
+                )
+                continue
             if result.terminal_state is TerminalState.SENT and result.message:
-                self._send_and_record(tenant_id, invoice, msg, result.message, send)
+                invoice = self._send_and_record(tenant_id, invoice, msg, result.message, send)
+                invoices[invoice_id] = invoice
             changed.append((invoice_id, result))
         return changed
 
-    def _send_and_record(self, tenant_id, invoice: Invoice, msg: GmailMessage, body: str, send: Send) -> None:
+    def _send_and_record(
+        self, tenant_id, invoice: Invoice, msg: GmailMessage, body: str, send: Send
+    ) -> Invoice:
         # Gmail sends as the authenticated (tenant's) account regardless of the
         # MIME From header, but the header still needs a real value for display
         # - the vendor's own identity, never the debtor's address.
@@ -170,16 +203,19 @@ class InboundMailBoard:
             to=reply_to or msg.from_address, from_address=from_address,
             subject=msg.subject, body_text=body,
         )
-        if sent_message_id and db.supabase_enabled():
-            db.write_contact(
-                invoice.tenant_id, invoice.invoice_id,
-                PriorContact(
-                    occurred_on=msg.occurred_at.date(), direction=ContactDirection.OUTBOUND,
-                    channel=Channel.EMAIL, summary=body[:500],
-                    provider_message_id=sent_message_id, in_reply_to=msg.message_id,
-                    thread_ref=msg.thread_id,
-                ),
-            )
+        if not sent_message_id:
+            return invoice
+        # In-memory history updates unconditionally, same reasoning as
+        # _write_inbound_contact - see its comment.
+        contact = PriorContact(
+            occurred_on=msg.occurred_at.date(), direction=ContactDirection.OUTBOUND,
+            channel=Channel.EMAIL, summary=body[:500],
+            provider_message_id=sent_message_id, in_reply_to=msg.message_id,
+            thread_ref=msg.thread_id,
+        )
+        if db.supabase_enabled():
+            db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        return invoice.model_copy(update={"prior_contacts": [*invoice.prior_contacts, contact]})
 
     def _log_skip(self, reason: str) -> None:
         if self._log is not None:

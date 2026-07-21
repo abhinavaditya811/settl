@@ -21,6 +21,10 @@ _SELECT_SQL = """
     where tenant_id = %(tenant_id)s and provider = %(provider)s
 """
 
+_LIST_TENANTS_SQL = """
+    select tenant_id from oauth_tokens where provider = %(provider)s
+"""
+
 
 def upsert_token(
     tenant_id: str, provider: str, encrypted_refresh_token: str, scopes: list[str]
@@ -49,3 +53,12 @@ def load_token(tenant_id: str, provider: str = "google") -> tuple[str, list[str]
     if row is None:
         return None
     return row["encrypted_refresh_token"], list(row["scopes"] or [])
+
+
+def list_connected_tenants(provider: str = "google") -> list[str]:
+    """Every tenant with a stored token for ``provider`` - what the scheduled
+    inbound-mail poll (api/inbound_poll_scheduler.py) iterates over, so a new
+    tenant is picked up automatically on connect with no extra registration step."""
+    with connect() as conn:
+        rows = conn.execute(_LIST_TENANTS_SQL, {"provider": provider}).fetchall()
+    return [row["tenant_id"] for row in rows]
