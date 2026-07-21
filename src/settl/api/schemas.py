@@ -169,3 +169,33 @@ class ManualEntryResponse(BaseModel):
     invoice_id: str
     quarantined: bool
     issues: list[str] = []
+
+
+class InstallmentView(BaseModel):
+    index: int
+    amount: str
+    due_date: str
+    payment_link: str | None = None
+    paid_at: str | None = None
+
+
+class PaymentPlanView(BaseModel):
+    invoice_id: str
+    status: str  # proposed | approved | rejected | active | broken | completed
+    installments: list[InstallmentView]
+    source: str  # template | negotiated
+    template_ref: str | None = None
+    offer_count: int
+    can_reoffer: bool
+
+
+class PaymentPlanDecisionBody(BaseModel):
+    approved: bool
+
+
+class PaymentPlanDecisionResponse(BaseModel):
+    invoice_id: str
+    plan_status: str
+    offer_count: int
+    terminal_state: str
+    detail: str

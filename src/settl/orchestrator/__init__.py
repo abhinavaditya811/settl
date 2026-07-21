@@ -2,6 +2,7 @@
 (strategy → draft → compliance gate → send) and decides the unpaid loop."""
 
 from settl.orchestrator.loop import LoopDecision, next_touch, next_touch_after_reconcile
+from settl.orchestrator.payment_plan import decide_payment_plan
 from settl.orchestrator.pipeline import Orchestrator, default_draft
 from settl.orchestrator.result import (
     PipelineResult,
@@ -25,6 +26,7 @@ __all__ = [
     "PipelineResult",
     "PipelineStep",
     "TerminalState",
+    "decide_payment_plan",
     "default_draft",
     "next_touch",
     "next_touch_after_reconcile",
