@@ -20,6 +20,7 @@ gmail = [
     "google-auth>=2.30",
     "google-auth-oauthlib>=1.2",
     "cryptography>=42.0",
+    "requests>=2.31",
 ]
 
 [tool.setuptools.packages.find]
