@@ -130,6 +130,18 @@ def audio_with(**overrides) -> Audio:
 
 
 @dataclass(frozen=True)
+class PaymentPlanTemplate:
+    """One vendor-preapproved installment option (SCHEMA.md §8). Fully
+    vendor-defined - no platform-wide ceiling on installments/period_days;
+    eligibility (autonomy + min_amount) is enforced at the compliance gate,
+    not here."""
+
+    installments: int  # number of equal installments
+    period_days: int  # days between each installment's due date
+    label: str = ""  # e.g. "3 installments over 60 days" - used in the offer text
+
+
+@dataclass(frozen=True)
 class Policy:
     """Gate/strategy inputs. Defaults mirror the engine's built-in thresholds."""
 
@@ -144,11 +156,10 @@ class Policy:
     min_days_between_touches: int = 2
     # Payment-plan autonomy opt-in (SCHEMA.md §8). Off by default - a payment-plan
     # request escalates to a human unconditionally unless a tenant explicitly opts
-    # in AND the invoice clears their own amount floor. `payment_plan_templates`
-    # (the vendor-preapproved installment options) lands with the offer/negotiate
-    # agent (agents/payment_plan/), not here, since nothing reads it yet.
+    # in AND the invoice clears their own amount floor.
     payment_plan_autonomy: bool = False
     payment_plan_min_amount: Decimal | None = None
+    payment_plan_templates: tuple[PaymentPlanTemplate, ...] = ()
 
 
 DEFAULT_POLICY = Policy()
