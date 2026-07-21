@@ -279,6 +279,14 @@ def test_guardrails_route_returns_a_list():
     assert isinstance(r.json(), list)
 
 
+def test_check_inbound_mail_is_noop_without_google_oauth_configured():
+    # No GOOGLE_OAUTH_CLIENT_ID/_SECRET in the test environment - never even
+    # attempts to spawn the MCP subprocess.
+    r = client.post("/check-inbound-mail", params={"tenant_id": "t_demo"})
+    assert r.status_code == 200
+    assert r.json() == {"changed": []}
+
+
 # --- payment plan: offer -> decide (SCHEMA.md §8) -----------------------------
 
 

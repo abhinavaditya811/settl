@@ -28,6 +28,12 @@ class PaymentPlanBoard:
     def get(self, invoice_id: str) -> PaymentPlan | None:
         return self._plans.get(invoice_id)
 
+    def all(self) -> dict[str, PaymentPlan]:
+        """Every plan currently held, keyed by invoice_id - read by
+        InboundMailBoard.poll to route a reply into negotiation vs. the
+        generic inbound lanes (SCHEMA.md §7/§8)."""
+        return dict(self._plans)
+
     def offer(self, invoice: Invoice) -> PaymentPlan | None:
         """Offer the vendor's first-configured template. None if the tenant has
         no templates configured (nothing to offer) - the caller (the inbound

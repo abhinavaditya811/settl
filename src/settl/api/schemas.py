@@ -76,6 +76,10 @@ class CheckPaymentsResponse(BaseModel):
     recovered: list[str]  # invoice ids auto-reconciled to RECOVERED on this poll
 
 
+class CheckInboundMailResponse(BaseModel):
+    changed: list[str]  # invoice ids whose board state moved on this poll
+
+
 class WebhookAck(BaseModel):
     received: bool  # always true once the signature verified (Stripe wants a fast 2xx)
     changed: list[str] = []  # invoice ids whose board state moved on this event

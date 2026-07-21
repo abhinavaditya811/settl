@@ -38,6 +38,7 @@ from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.data import supabase as db
 from settl.agents.payment_plan.models import PaymentPlan
+from settl.api.inbound_mail_board import InboundMailBoard
 from settl.api.metrics import compute_metrics
 from settl.api.payment_plan_board import PaymentPlanBoard
 from settl.governance import Directive, OperatorRule, RuleStore, Scope
@@ -86,6 +87,7 @@ class BoardState:
         )
         self._approver = Orchestrator(log=self._log, sender=sender, rules_store=self._rules)
         self._payment_plans = PaymentPlanBoard(log=self._log)
+        self._inbound_mail = InboundMailBoard(orchestrator=self._approver, log=self._log)
         self._results: dict[str, PipelineResult] = {}
         # Append-only money-event log per invoice; poll AND webhook write here and
         # reconcile always re-derives over the full log (so refunds/disputes reverse).
@@ -279,6 +281,20 @@ class BoardState:
             "terminal_state": result.terminal_state.value,
             "detail": result.detail,
         }
+
+    def poll_inbound_mail(self, tenant_id: str) -> list[str]:
+        """Poll one tenant's Gmail for new replies (SCHEMA.md §7). No-op ([])
+        if Google OAuth isn't configured at all - same early-exit shape as
+        check_payments()'s `self._minter is None` guard, so a plain run never
+        pays the cost of spawning the MCP subprocess just to have it fail."""
+        from settl.api.oauth_google import google_oauth_enabled
+
+        if not google_oauth_enabled():
+            return []
+        changed = self._inbound_mail.poll(tenant_id, self._invoices, self._payment_plans.all())
+        for invoice_id, result in changed:
+            self._results[invoice_id] = result
+        return [invoice_id for invoice_id, _ in changed]
 
     def flag_decision(
         self,
