@@ -16,9 +16,11 @@ can never double-count.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 
+from settl.agents.payment_plan.models import PaymentPlan
 from settl.agents.reconcile.events import (
     PaymentEvent,
     PaymentEventKind,
@@ -115,3 +117,57 @@ def reconcile_payment(
     """Classify the invoice from its events. Returns (status, net_recovered)."""
     tally = tally_events(invoice, events)
     return classify(invoice, tally), tally.net_paid
+
+
+def classify_plan(
+    invoice: Invoice, plan: PaymentPlan, events: list[PaymentEvent]
+) -> ReconcileStatus:
+    """Schedule-aware variant of :func:`classify` for an active PaymentPlan
+    (SCHEMA.md §8) - a separate function, not a parameter on ``classify``, since
+    comparing against a cumulative schedule is a different algorithm from
+    comparing against one scalar ``amount_due``. ``classify`` itself is untouched
+    for every non-plan invoice.
+
+    Reuses ``tally_events`` (still the single source of truth for money observed
+    against this invoice - each installment's own Stripe link still produces
+    ordinary PaymentEvents) rather than trying to attribute individual events to
+    specific installments.
+    """
+    tally = tally_events(invoice, events)
+    if tally.currency_mismatch:
+        return ReconcileStatus.ANOMALY
+    if tally.has_dispute:
+        return ReconcileStatus.DISPUTED
+    if invoice.amount_due > 0 and tally.net_paid >= invoice.amount_due:
+        return ReconcileStatus.PAID
+    cumulative_due = sum(
+        (i.amount for i in plan.installments if i.due_date <= invoice.as_of_date),
+        Decimal("0"),
+    )
+    if tally.net_paid < cumulative_due:
+        return ReconcileStatus.INSTALLMENT_OVERDUE
+    if tally.net_paid > 0:
+        return ReconcileStatus.PARTIAL
+    return ReconcileStatus.UNPAID
+
+
+def mark_paid_installments(plan: PaymentPlan, net_paid: Decimal, as_of: date) -> PaymentPlan:
+    """FIFO-allocate ``net_paid`` across ``plan.installments`` in order, marking
+    each covered installment's ``paid_at``. A deliberate simplification: this
+    doesn't attribute a specific Stripe session to a specific installment link,
+    it just asks "has enough arrived, in total, to have covered the first N
+    installments" - correct as long as installments are paid in order, which the
+    schedule itself assumes.
+    """
+    remaining = net_paid
+    new_installments = []
+    for i in plan.installments:
+        if i.is_paid:
+            new_installments.append(i)
+            continue
+        if remaining >= i.amount:
+            remaining -= i.amount
+            new_installments.append(replace(i, paid_at=as_of))
+        else:
+            new_installments.append(i)
+    return replace(plan, installments=tuple(new_installments))

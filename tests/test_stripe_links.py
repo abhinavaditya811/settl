@@ -81,6 +81,44 @@ def test_mint_tracks_the_link_id_for_polling(monkeypatch):
     assert m.link_id("INV-NONE") is None
 
 
+# --- per-installment minting (SCHEMA.md §8) -------------------------------------
+
+
+def test_mint_per_installment_uses_the_installment_amount_not_invoice_total(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _FakeClient()
+    inv = _inv(amount="300.00")  # invoice total - NOT what should be minted
+    StripeLinkMinter(client=fc).mint(inv, installment_index=0, amount=Decimal("100.00"))
+    assert fc.calls[0][1]["unit_amount"] == 10000  # the installment's own amount
+
+
+def test_mint_per_installment_is_cached_separately_from_the_invoice_link(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _FakeClient()
+    m = StripeLinkMinter(client=fc)
+    inv = _inv(amount="300.00")
+    m.mint(inv)  # whole-invoice link
+    m.mint(inv, installment_index=0, amount=Decimal("100.00"))
+    m.mint(inv, installment_index=1, amount=Decimal("100.00"))
+    # Three distinct links minted - none of them reused another's cache slot.
+    assert sum(1 for c in fc.calls if c[0] == "price") == 3
+    # Re-minting the same three keys hits the cache - still only 3 total.
+    m.mint(inv)
+    m.mint(inv, installment_index=0, amount=Decimal("100.00"))
+    assert sum(1 for c in fc.calls if c[0] == "price") == 3
+    assert m.link_id(inv.invoice_id, installment_index=0) is not None
+    assert m.link_id("nonexistent", installment_index=0) is None
+
+
+def test_mint_per_installment_tags_metadata_with_the_index(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    fc = _FakeClient()
+    inv = _inv()
+    StripeLinkMinter(client=fc).mint(inv, installment_index=2, amount=Decimal("50.00"))
+    link_call = next(c for c in fc.calls if c[0] == "link")
+    assert link_call[1]["metadata"]["settl_installment_index"] == "2"
+
+
 # --- payment detection (Stripe -> canonical event) ----------------------------
 
 

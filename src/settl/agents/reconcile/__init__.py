@@ -13,6 +13,8 @@ from settl.agents.reconcile.notify import OperatorNotifier
 from settl.agents.reconcile.payment import (
     PaymentTally,
     classify,
+    classify_plan,
+    mark_paid_installments,
     reconcile_payment,
     tally_events,
     total_paid,
@@ -30,6 +32,8 @@ __all__ = [
     "reconcile_payment",
     "tally_events",
     "classify",
+    "classify_plan",
+    "mark_paid_installments",
     "PaymentTally",
     "total_paid",
     "OperatorNotifier",
