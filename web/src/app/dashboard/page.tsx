@@ -12,7 +12,6 @@ import { getBoard } from "@/lib/api";
 import { Loading } from "@/components/ui";
 import BoardShell from "@/components/dashboard/BoardShell";
 import ZeroState from "@/components/zero/ZeroState";
-import GmailConnect from "@/components/GmailConnect";
 
 const Centered = styled.div`
   min-height: 100vh;
@@ -30,14 +29,9 @@ const ZeroWrap = styled.div`
 `;
 
 const Account = styled.div`
-  display: flex; align-items: center; gap: 8px; padding: 2px 4px;
-  .who {
-    flex: 1; min-width: 0; font-size: 12px; font-weight: 600;
-    color: ${({ theme }) => theme.textMuted};
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  display: flex; align-items: center; padding: 2px 4px;
   button {
-    flex-shrink: 0; padding: 5px 10px; border-radius: 8px;
+    width: 100%; padding: 5px 10px; border-radius: 8px;
     border: 1px solid ${({ theme }) => theme.border};
     background: transparent; color: ${({ theme }) => theme.textMuted};
     font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -90,10 +84,6 @@ export default function DashboardPage() {
       footer={
         session?.user && (
           <Account>
-            <span className="who" title={session.user.email ?? undefined}>
-              {session.user.email}
-            </span>
-            <GmailConnect />
             <button onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
           </Account>
         )

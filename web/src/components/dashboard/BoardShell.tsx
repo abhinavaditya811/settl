@@ -17,14 +17,18 @@ import OverviewPanels from "@/components/overview/OverviewPanels";
 import ApprovalsView from "@/components/overview/ApprovalsView";
 import InvoicesView from "@/components/overview/InvoicesView";
 import ActivityView from "@/components/overview/ActivityView";
+import ProfileView from "@/components/profile/ProfileView";
 
-type Tab = "overview" | "approvals" | "invoices" | "activity";
+type Tab = "overview" | "approvals" | "invoices" | "activity" | "profile";
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "approvals", label: "Approvals" },
   { key: "invoices", label: "Invoices" },
   { key: "activity", label: "Activity" },
 ];
+// Profile (account identity + Connect Gmail) is only meaningful for a signed-in
+// operator's own board - the public demo has no session and no tenant to connect.
+const PROFILE_TAB: { key: Tab; label: string } = { key: "profile", label: "Profile" };
 
 const Shell = styled.div`
   display: flex; min-height: 100vh;
@@ -110,17 +114,19 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
   const [tab, setTab] = useState<Tab>("overview");
   const { board, metrics, loading } = useBoard();
   const theme = useTheme() as AppTheme;
+  const tabs = mode === "mine" ? [...TABS, PROFILE_TAB] : TABS;
 
   // Deep-linkable tabs: #invoices opens straight to Invoices (handy for sharing a
   // specific view).
   useEffect(() => {
     const apply = () => {
       const h = window.location.hash.replace("#", "");
-      if (TABS.some((t) => t.key === h)) setTab(h as Tab);
+      if (tabs.some((t) => t.key === h)) setTab(h as Tab);
     };
     apply();
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const go = (k: Tab) => { setTab(k); if (typeof window !== "undefined") window.location.hash = k; };
 
@@ -142,7 +148,7 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
           </span>
           <span className="name">Settl</span>
         </Brand>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <Nav key={t.key} $on={tab === t.key} onClick={() => go(t.key)}>
             {t.label}
             {t.key === "approvals" && Boolean(approvalsBadge) && (
@@ -173,6 +179,7 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
         {tab === "approvals" && <ApprovalsView />}
         {tab === "invoices" && <InvoicesView />}
         {tab === "activity" && <ActivityView />}
+        {tab === "profile" && <ProfileView />}
       </Main>
     </Shell>
   );
