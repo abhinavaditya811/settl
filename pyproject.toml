@@ -15,6 +15,12 @@ api = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 gemini = ["google-genai>=1.0"]
 stripe = ["stripe>=9.0"]
 db = ["psycopg[binary]>=3.1"]
+gmail = [
+    "mcp[cli]>=1.0,<2.0",
+    "google-auth>=2.30",
+    "google-auth-oauthlib>=1.2",
+    "cryptography>=42.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
