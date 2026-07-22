@@ -154,6 +154,60 @@ steers similar cases, and no flag can make the engine send something a hard rule
 
 ---
 
+## Payment-plan track (SCHEMA.md §8) - installment plans as a bounded-autonomy lane
+**Goal:** a debtor asking to pay over time gets a vendor-preapproved installment plan,
+never confirmed without the vendor's explicit approve/reject. Built across several
+sessions via live manual testing (not week-pinned). **Invariant:** the AI may offer a
+template and read the debtor's response, but only `orchestrator/payment_plan.py::
+decide_payment_plan` (the vendor's explicit action) can ever confirm anything to the
+debtor - `payment_plan_autonomy` gates whether that confirmation actually sends, it can
+never make the AI decide on the vendor's behalf.
+
+- [x] `agents/payment_plan/` - offer/build_installments/reoffer (pure, currency-exact),
+  negotiate.py::read_response (accept vs. wants-different-terms, never auto-negotiates),
+  monitor.py (missed-installment reminder-then-escalate state machine).
+- [x] `api/payment_plan_board.py` + `api/payment_plan_routes.py` - offer / reoffer /
+  decide over HTTP, durable via `payment_plans` table (hydrated on startup - a restart
+  used to silently forget every in-flight plan).
+- [x] `InboundMailBoard` wired to negotiate.py - a reply while a plan is proposed/active
+  routes to negotiation, not the generic inbound lanes; the outcome + the debtor's own
+  words are persisted onto the plan (`negotiation_outcome`, `requested_terms`, migration
+  013) so the vendor sees what was said BEFORE deciding, not just in the log.
+- [x] `payment_plan_autonomy` is a real per-tenant setting (`tenant_config_routes.py`,
+  Profile tab + asked once at the ZeroState onboarding screen) - previously the gate
+  never consulted per-tenant policy at all (`ComplianceGate` was built once, shared
+  across every tenant, with no config), so the flag had no way to ever take effect.
+- [x] `PaymentPlanPanel.tsx` - offer / approve / reject / re-offer, shows the debtor's
+  negotiation response before the vendor decides.
+
+**Deferred - pinned here, not yet built:**
+- [ ] **Threaded confirmation reply.** `decide_payment_plan`'s confirmation currently
+  sends as a fresh email via the standard `GatedSender`, not as a reply into the
+  debtor's "can I get a payment plan" thread. The pieces exist: `InboundMailBoard.
+  _send_and_record` already knows how to send a threaded Gmail reply (`thread_id`/
+  `in_reply_to`), and the debtor's inbound contact carries `thread_ref`/
+  `provider_message_id`. Needs: at approve-time, look up the invoice's inbound
+  `payment_plan_request` contact and route the confirmation through the threaded send
+  path instead of `GatedSender`. `PaymentPlan.contact_ref` was seemingly built for
+  exactly this and is still unused.
+- [ ] **Per-installment payment links.** The confirmation currently contains **no
+  payment link at all** - a debtor who accepts a plan has no way to actually pay it.
+  `payments/stripe_links.py::StripeLinkMinter.mint(invoice, installment_index=i,
+  amount=...)` already mints a separate, idempotent link per installment (tagged with
+  `settl_installment_index` metadata) - nothing calls it. `Installment.payment_link`
+  stays `None` forever. Recommended shape (discussed, not yet built): mint at
+  **approve**, not offer (don't create live Stripe objects for terms that might be
+  rejected); keep the existing pooled/FIFO reconcile math (`classify_plan`,
+  `mark_paid_installments`) as the source of truth for "is this plan on track" rather
+  than rearchitecting reconcile to attribute a specific session to a specific
+  installment - the per-installment link is for debtor-facing clarity in each
+  reminder, not reconcile precision.
+
+**Done when:** a debtor's plan request is offered, negotiated, approved, and confirmed
+*as a reply in their own thread*, with a payable link on every installment.
+
+---
+
 ## Week 6 - End-to-end demo + red-team + polish
 **Goal:** one clean recorded run through the *real* stack for the 3-min video.
 **Suggested owner:** A + B together (buffer week for slippage)
