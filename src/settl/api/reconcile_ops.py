@@ -73,10 +73,15 @@ class ReconciliationDesk:
 
     def load_events(self, events: dict[str, list[PaymentEvent]]) -> None:
         """Replay persisted payment events so reconcile state (RECOVERED/PARTIAL/
-        escalated) survives a restart instead of resetting until the next poll."""
+        escalated) survives a restart instead of resetting until the next poll.
+
+        notify=False: these events were already processed - and their operator
+        "Recovered/Needs review" email already sent - before the restart. Only a
+        genuinely-new payment discovered live (check_payments/webhook) notifies;
+        replaying known history must be silent, or every restart re-emails."""
         self._events = events
         for invoice_id in list(self._events):
-            self._apply_reconcile(invoice_id)
+            self._apply_reconcile(invoice_id, notify=False)
 
     def enrich_payment_links(self, invoices: list[Invoice]) -> list[Invoice]:
         """For the demo, mint a real (test-mode) Stripe link per invoice so the board,
@@ -185,10 +190,11 @@ class ReconciliationDesk:
             return self._pi_to_invoice[parsed.payment_intent]
         return None
 
-    def _apply_reconcile(self, invoice_id: str) -> ReconcileOutcome | None:
+    def _apply_reconcile(self, invoice_id: str, *, notify: bool = True) -> ReconcileOutcome | None:
         """Re-derive status over the full event log and reflect it on the board.
         Idempotent (unchanged outcome = no-op). A refund that un-pays a RECOVERED
-        invoice drops it back to SENT to chase the residual."""
+        invoice drops it back to SENT to chase the residual. ``notify=False`` (the
+        startup replay path) restores state without re-emailing the operator."""
         invoice = self._invoices.get(invoice_id)
         result = self._results.get(invoice_id)
         events = self._events.get(invoice_id)
@@ -202,7 +208,7 @@ class ReconciliationDesk:
             return None  # nothing new since last time - no log spam, no re-notify
         self._reconcile_sig[invoice_id] = sig
 
-        outcome = self._reconciler.reconcile(invoice, events)  # logs + notifies once
+        outcome = self._reconciler.reconcile(invoice, events, notify=notify)  # logs + (maybe) notifies
         new_state = result.terminal_state
         if outcome.status is ReconcileStatus.PAID:
             new_state = TerminalState.RECOVERED
