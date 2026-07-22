@@ -67,6 +67,47 @@ export interface CheckPaymentsResponse {
   recovered: string[]; // invoice ids auto-reconciled to RECOVERED on this poll
 }
 
+export interface CheckInboundMailResponse {
+  changed: string[]; // invoice ids whose board state moved on this poll
+}
+
+export interface InstallmentView {
+  index: number;
+  amount: string;
+  due_date: string;
+  payment_link: string | null;
+  paid_at: string | null;
+}
+
+export type PaymentPlanStatus = "proposed" | "approved" | "rejected" | "active" | "broken" | "completed";
+
+export interface PaymentPlanView {
+  invoice_id: string;
+  status: PaymentPlanStatus;
+  installments: InstallmentView[];
+  source: "template" | "negotiated";
+  template_ref: string | null;
+  offer_count: number;
+  can_reoffer: boolean;
+}
+
+export interface PaymentPlanDecisionResponse {
+  invoice_id: string;
+  plan_status: string;
+  offer_count: number;
+  terminal_state: string;
+  detail: string;
+}
+
+// A vendor-preapproved installment option (Profile tab settings). No platform
+// ceiling on installments/period_days at the engine level - eligibility is
+// enforced at the compliance gate, not here (see PaymentPlanTemplate's docstring).
+export interface PaymentPlanTemplateInput {
+  installments: number;
+  period_days: number;
+  label: string;
+}
+
 // Human-in-the-loop: flag a decision → guardrail + re-orchestrate.
 export type FlagScope = "strategy" | "compliance";
 export type FlagDirective =

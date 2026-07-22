@@ -23,6 +23,7 @@ import type {
 import {
   approveInvoice,
   type BoardMode,
+  checkInboundMail,
   checkPayments,
   flagDecision,
   getActivity,
@@ -202,6 +203,29 @@ export default function BoardProvider({
     const t = setInterval(tick, 12000);
     return () => clearInterval(t);
   }, [stripeEnabled, loadAll]);
+
+  // Auto-detect inbound replies: same pattern as the Stripe poll above, but for
+  // Gmail. The engine ALSO polls on its own every ~2min (inbound_poll_scheduler)
+  // whether or not a dashboard is open; this just nudges that on-demand while a
+  // tab is open, so a reply shows up without a manual refresh. "mine" only - the
+  // public demo view has no Gmail ever connected (synthetic tenants), so polling
+  // it would just spawn a failing subprocess every tick for no reason.
+  useEffect(() => {
+    if (mode !== "mine") return;
+    const tick = async () => {
+      try {
+        const res = await checkInboundMail(mode);
+        if (res.changed.length) {
+          await loadAll();
+          setToast({ tone: "ok", text: `New reply on ${res.changed.join(", ")}.` });
+        }
+      } catch {
+        /* polling errors are non-fatal */
+      }
+    };
+    const t = setInterval(tick, 20000);
+    return () => clearInterval(t);
+  }, [mode, loadAll]);
 
   const value: BoardCtx = {
     board,
