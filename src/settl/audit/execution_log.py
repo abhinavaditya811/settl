@@ -29,6 +29,24 @@ class LogEntry:
     details: dict[str, Any] = field(default_factory=dict)
 
 
+def deduped_entries(entries: list[LogEntry]) -> list[LogEntry]:
+    """Collapse exact (agent, decision, reasoning) repeats, keeping the first and
+    preserving order. The durable log re-records the same "thinking" steps every
+    time the board re-orchestrates an unchanged invoice (each refresh/restart), so
+    a lifetime read has duplicates; this keeps one line per distinct step. Only
+    exact repeats collapse - two genuine sends (different message/date) or a
+    chase→hold change stay as separate lines."""
+    seen: set[tuple[str, str, str]] = set()
+    out: list[LogEntry] = []
+    for e in entries:
+        key = (e.agent, e.decision, e.reasoning)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
+
+
 class ExecutionLog:
     """Append-only log. Mirrors each entry to any attached ``LogSink`` (JSONL by
     default when ``jsonl_path`` is given, plus any injected ``sinks``)."""

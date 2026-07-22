@@ -1,13 +1,14 @@
 """Execution log: every agent decision + its reasoning (audit / evidence)."""
 
 from settl.audit.agent_engine import AgentEngineSink, agent_engine_enabled
-from settl.audit.execution_log import ExecutionLog, LogEntry
+from settl.audit.execution_log import ExecutionLog, LogEntry, deduped_entries
 from settl.audit.export import evidence_bundle, load_evidence, write_evidence
 from settl.audit.sink import JsonlSink, LogSink
 
 __all__ = [
     "ExecutionLog",
     "LogEntry",
+    "deduped_entries",
     "LogSink",
     "JsonlSink",
     "AgentEngineSink",

@@ -2,7 +2,8 @@
 
 import styled from "styled-components";
 import type { ActivityEntry, TerminalState } from "@/lib/types";
-import { prettyAgent, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
+import { headline, cleanReasoning, stepTier } from "@/lib/reasoning";
 import { EmptyState } from "@/components/ui";
 
 // Map a logged decision to a status color so the feed reads at a glance. Exported
@@ -63,17 +64,11 @@ const Body = styled.div`
     font-size: 13px;
     .agent {
       font-weight: 700;
-      text-transform: capitalize;
     }
     .id {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       color: ${({ theme }) => theme.textMuted};
       margin-left: 8px;
-    }
-    .decision {
-      color: ${({ theme }) => theme.textMuted};
-      margin-left: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11.5px;
     }
   }
@@ -100,7 +95,10 @@ export default function ActivityList({
   limit?: number;
   onSelect?: (invoiceId: string) => void;
 }) {
-  const rows = limit ? entries.slice(0, limit) : entries;
+  // The glance widget shows only the milestones that matter, in plain English -
+  // the internal mechanics live on the full Activity tab and the invoice timeline.
+  const milestones = entries.filter((e) => stepTier(e.agent, e.decision) === "milestone");
+  const rows = limit ? milestones.slice(0, limit) : milestones;
   if (rows.length === 0) return <EmptyState text="No activity yet." />;
   return (
     <List>
@@ -109,16 +107,15 @@ export default function ActivityList({
           key={`${e.invoice_id}-${i}`}
           $clickable={!!onSelect}
           onClick={onSelect ? () => onSelect(e.invoice_id) : undefined}
-          title={onSelect ? `Open ${e.invoice_id}'s trace` : undefined}
+          title={onSelect ? `Open ${e.invoice_id}'s timeline` : undefined}
         >
           <Dot $tone={TONE[e.decision] ?? "skipped"} />
           <Body>
             <div className="top">
-              <span className="agent">{prettyAgent(e.agent)}</span>
+              <span className="agent">{headline(e.agent, e.decision)}</span>
               <span className="id">{e.invoice_id}</span>
-              <span className="decision">{e.decision}</span>
             </div>
-            <div className="why">{e.reasoning}</div>
+            <div className="why">{cleanReasoning(e.reasoning)}</div>
           </Body>
           <Time>{timeAgo(e.timestamp)}</Time>
         </Entry>
