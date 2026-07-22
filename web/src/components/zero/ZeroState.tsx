@@ -8,7 +8,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import styled from "styled-components";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import UploadCsvModal from "./UploadCsvModal";
 import ManualEntryModal from "./ManualEntryModal";
 
@@ -31,6 +31,13 @@ export default function ZeroState({ onOwnDataAdded }: Props) {
 
   return (
     <Wrap>
+      {email && (
+        <TopBar>
+          <span className="who" title={email}>{email}</span>
+          <button onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
+        </TopBar>
+      )}
+
       <Intro>
         <h1>You&rsquo;re connected{email ? `, ${email}` : ""}.</h1>
         <p>
@@ -103,6 +110,37 @@ const Wrap = styled.div`
   display: flex;
   flex-direction: column;
   gap: 28px;
+`;
+
+const TopBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  .who {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: ${({ theme }) => theme.textMuted};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+  }
+  button {
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.surface};
+    color: ${({ theme }) => theme.textMuted};
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    &:hover {
+      background: ${({ theme }) => theme.surfaceAlt};
+      color: ${({ theme }) => theme.text};
+    }
+  }
 `;
 
 const Intro = styled.div`
