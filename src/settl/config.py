@@ -41,6 +41,19 @@ def gemini_flash_model_name(override: str | None = None) -> str:
     return override or os.environ.get("GEMINI_FLASH_MODEL", DEFAULT_GEMINI_FLASH_MODEL)
 
 
+# Groq (open-source Llama on an OpenAI-compatible API) - the inbound-classifier's
+# higher-quota, faster alternative to Gemini Flash, whose free tier kept 429-ing and
+# silently dropping the classification to the weaker regex backstop. A small instruct
+# model is plenty for 4-lane routing; override with GROQ_MODEL if the id changes
+# (they do) - a bad id just fails safe to the regex backstop.
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+
+
+def groq_model_name(override: str | None = None) -> str:
+    """Resolve the Groq model id: explicit override → GROQ_MODEL env → shared default."""
+    return override or os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+
+
 def load_dotenv(path: str | Path | None = None) -> dict[str, str]:
     """Load KEY=VALUE pairs from ``path`` (default: repo-root ``.env``).
 

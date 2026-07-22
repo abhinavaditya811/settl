@@ -8,6 +8,7 @@ from settl.agents.inbound.classifier import (
 )
 from settl.agents.inbound.model import (
     GeminiInboundClassifierModel,
+    GroqInboundClassifierModel,
     InboundClassifierModel,
     NoOpClassifierModel,
 )
@@ -22,4 +23,5 @@ __all__ = [
     "InboundClassifierModel",
     "NoOpClassifierModel",
     "GeminiInboundClassifierModel",
+    "GroqInboundClassifierModel",
 ]

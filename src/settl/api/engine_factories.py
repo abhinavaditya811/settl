@@ -119,13 +119,27 @@ def make_drafter(log: ExecutionLog):
     return DraftingAgent(log=log)
 
 
-def make_inbound_agent(log: ExecutionLog):
-    """Real Gemini classification for inbound replies (lane routing - dispute/
-    opt-out/payment-plan/benign) when a key is configured; the regex backstop
-    otherwise. Only changes WHICH LANE a reply routes to - the compliance gate
-    remains the sole send authority regardless of which classifier decided it."""
-    from settl.agents.inbound import GeminiInboundClassifierModel, InboundAgent
+def groq_enabled() -> bool:
+    """Groq (open-source Llama) inbound classification is opt-in (SETTL_USE_GROQ=1)
+    *and* needs a key - same off-by-default posture as Gemini so the test suite and
+    a plain run stay offline."""
+    return os.environ.get("SETTL_USE_GROQ") == "1" and bool(os.environ.get("GROQ_API_KEY"))
 
+
+def make_inbound_agent(log: ExecutionLog):
+    """Classifier for inbound replies (lane routing - dispute/opt-out/payment-plan/
+    benign). Preference order: Groq (higher free-tier quota - Gemini's kept 429-ing
+    and silently dropping replies to the weak regex backstop) → Gemini → the regex
+    backstop. Only changes WHICH LANE a reply routes to - the compliance gate remains
+    the sole send authority regardless of which classifier decided it."""
+    from settl.agents.inbound import (
+        GeminiInboundClassifierModel,
+        GroqInboundClassifierModel,
+        InboundAgent,
+    )
+
+    if groq_enabled():
+        return InboundAgent(log=log, model=GroqInboundClassifierModel())
     if gemini_enabled():
         return InboundAgent(log=log, model=GeminiInboundClassifierModel())
     return InboundAgent(log=log)

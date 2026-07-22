@@ -1,9 +1,12 @@
-"""🔌 Generation-model seam for inbound classification (Gemini 3 Flash).
+"""🔌 Generation-model seam for inbound classification (lane routing).
 
-CLAUDE.md maps high-volume routing to Gemini 3 Flash, judgment (strategy, drafting)
-to Gemini 3 Pro. Classifying which lane a reply belongs in is routing, not judgment,
-so it gets Flash. Mirrors the drafting/strategy model seams: a deterministic
-``NoOpClassifierModel`` default (decision core first) and a fail-safe live model.
+Classifying which lane a reply belongs in is routing, not judgment, so it gets a
+fast/high-volume model. Mirrors the drafting/strategy model seams: a deterministic
+``NoOpClassifierModel`` default (decision core first) plus two interchangeable live
+models - ``GeminiInboundClassifierModel`` and ``GroqInboundClassifierModel`` (Groq
+serving open-source Llama, added because Gemini's free tier kept 429-ing and
+silently dropping the classification to the weaker regex backstop). engine_factories
+picks one; both honor the same contract.
 
 Unlike drafting's fail-safe (falls back to a safe template), classification's
 fail-safe falls back to the regex backstop (classifier.py) rather than to a fixed
@@ -23,7 +26,7 @@ from settl.agents.inbound.classifier import (
     classify_deterministic,
     thread_classifications,
 )
-from settl.config import gemini_flash_model_name, load_dotenv
+from settl.config import gemini_flash_model_name, groq_model_name, load_dotenv
 from settl.schema.invoice import Invoice
 
 # Below this, the model's own answer is not trusted enough to act on - escalate
@@ -78,16 +81,27 @@ class NoOpClassifierModel:
         return classify_deterministic(invoice, message_text)
 
 
+def _low_confidence(result: InboundClassification) -> InboundClassification:
+    """Below the trust threshold → escalate rather than act on the guess (shared by
+    every live model). A human reads the reasoning, so it names the real model's
+    answer + confidence, never a blind benign."""
+    return InboundClassification(
+        InboundLane.ESCALATE_LOW_CONFIDENCE,
+        result.confidence,
+        f"model confidence {result.confidence:.2f} below threshold - "
+        f"escalating rather than trusting its guess ({result.reasoning})",
+    )
+
+
 class GeminiInboundClassifierModel:
     """🔌 Live Gemini Flash classification. Fail-safe: a missing key, missing SDK,
     any API error, or a low-confidence model answer all fall back to (or are
     overridden to) the deterministic regex classification - never a blind "benign"."""
 
-    name = "gemini-3-flash"
-
     def __init__(self, *, model_name: str | None = None, client=None) -> None:
         load_dotenv()
         self._model_name = gemini_flash_model_name(model_name)
+        self.name = self._model_name  # log the ACTUAL model, not a hardcoded label
         self._client = client  # injectable for tests; created lazily otherwise
 
     def _get_client(self):
@@ -105,12 +119,7 @@ class GeminiInboundClassifierModel:
         except Exception:
             return classify_deterministic(invoice, message_text)
         if result.confidence < _CONFIDENCE_ESCALATE_THRESHOLD:
-            return InboundClassification(
-                InboundLane.ESCALATE_LOW_CONFIDENCE,
-                result.confidence,
-                f"model confidence {result.confidence:.2f} below threshold - "
-                f"escalating rather than trusting its guess ({result.reasoning})",
-            )
+            return _low_confidence(result)
         return result
 
     def _call_model(self, invoice: Invoice, message_text: str) -> InboundClassification:
@@ -135,4 +144,63 @@ class GeminiInboundClassifierModel:
         parsed = response.parsed
         if not isinstance(parsed, _ClassificationOutput):
             raise ValueError(f"unexpected structured-output shape: {parsed!r}")
+        return InboundClassification(InboundLane(parsed.lane), parsed.confidence, parsed.reasoning)
+
+
+_JSON_INSTRUCTION = (
+    'Respond with ONLY a JSON object, no prose, exactly this shape: '
+    '{"lane": "benign|dispute|opt_out|payment_plan_request", '
+    '"confidence": <number 0..1>, "reasoning": "<one short sentence>"}'
+)
+
+
+class GroqInboundClassifierModel:
+    """🔌 Live Groq (open-source Llama) classification - a higher-quota, faster
+    alternative to Gemini for the SAME lane routing, on an OpenAI-compatible API.
+    Same fail-safe posture as the Gemini model: a missing key, missing SDK, any
+    API error, or a low-confidence answer falls back to (or is overridden to) the
+    deterministic regex classification - never a blind "benign". Only WHICH lane a
+    reply routes to changes; the compliance gate stays the sole send authority."""
+
+    def __init__(self, *, model_name: str | None = None, client=None) -> None:
+        load_dotenv()
+        self._model_name = groq_model_name(model_name)
+        self.name = self._model_name
+        self._client = client  # injectable for tests; created lazily otherwise
+
+    def _get_client(self):
+        if self._client is None:
+            from groq import Groq  # lazy import: the SDK is an optional extra
+
+            self._client = Groq()  # reads GROQ_API_KEY
+        return self._client
+
+    def classify(self, invoice: Invoice, message_text: str) -> InboundClassification:
+        if not os.environ.get("GROQ_API_KEY"):
+            return classify_deterministic(invoice, message_text)
+        try:
+            result = self._call_model(invoice, message_text)
+        except Exception:
+            return classify_deterministic(invoice, message_text)
+        if result.confidence < _CONFIDENCE_ESCALATE_THRESHOLD:
+            return _low_confidence(result)
+        return result
+
+    def _call_model(self, invoice: Invoice, message_text: str) -> InboundClassification:
+        history = thread_classifications(invoice)
+        history_note = (
+            f"Prior classifications in this thread (oldest first): {', '.join(history)}"
+            if history else "No prior classifications in this thread."
+        )
+        response = self._get_client().chat.completions.create(
+            model=self._model_name,
+            messages=[
+                {"role": "system", "content": f"{_LANE_GUIDE}\n\n{_JSON_INSTRUCTION}"},
+                {"role": "user", "content": f"{history_note}\n\nDebtor's message:\n{message_text}"},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,  # classification, not creative generation
+        )
+        content = response.choices[0].message.content or ""
+        parsed = _ClassificationOutput.model_validate_json(content)
         return InboundClassification(InboundLane(parsed.lane), parsed.confidence, parsed.reasoning)
