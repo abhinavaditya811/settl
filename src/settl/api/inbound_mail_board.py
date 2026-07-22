@@ -21,6 +21,7 @@ from typing import Callable
 
 from settl.agents.payment_plan.models import PaymentPlan, PaymentPlanStatus
 from settl.agents.payment_plan.negotiate import read_response
+from settl.api.payment_plan_board import PaymentPlanBoard
 from settl.audit.execution_log import ExecutionLog
 from settl.data import config_for
 from settl.data import supabase as db
@@ -91,6 +92,7 @@ class InboundMailBoard:
         log: ExecutionLog | None = None,
         live_reply_enabled: bool = False,
         demo_tenant_ids: frozenset[str] = frozenset(),
+        plan_board: PaymentPlanBoard | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._log = log
@@ -102,6 +104,11 @@ class InboundMailBoard:
         # (SETTL_LIVE_SEND_INBOUND_REPLY=1) and the invoice isn't a demo tenant.
         self._live_reply_enabled = live_reply_enabled
         self._demo_tenant_ids = demo_tenant_ids
+        # Persists a negotiation outcome onto the PaymentPlan itself (see
+        # _handle_plan_negotiation) so the vendor sees it before deciding, not just
+        # in the execution log. None in tests that don't need it - negotiation is
+        # then classified/logged but not persisted onto a plan record.
+        self._plan_board = plan_board
 
     def _reply_send_armed(self, invoice: Invoice) -> bool:
         if not self._live_reply_enabled:
@@ -158,6 +165,14 @@ class InboundMailBoard:
         invoice = self._write_inbound_contact(
             invoice, msg, classification=f"payment_plan_{negotiation.outcome.value}"
         )
+        # Persist onto the plan itself - not just the log - so the vendor sees what
+        # the debtor said BEFORE deciding (an observed gap: a vendor could approve
+        # terms the debtor had already said they didn't want, since the UI only
+        # ever showed the original offer with no visibility into the reply).
+        if self._plan_board is not None:
+            self._plan_board.record_negotiation(
+                invoice.invoice_id, negotiation.outcome.value, negotiation.requested_terms
+            )
         if self._log is not None:
             self._log.record(
                 invoice_id=invoice.invoice_id, agent="payment_plan_negotiate",

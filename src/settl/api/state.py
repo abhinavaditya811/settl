@@ -53,14 +53,14 @@ from settl.governance import Directive, OperatorRule, RuleStore, Scope
 from settl.orchestrator import Orchestrator, TerminalState
 from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import Channel, ContactDirection, Invoice, PriorContact
+from settl.tenancy.config import PaymentPlanTemplate
 
 
 class BoardState:
     def __init__(self, log_path: str | Path | None = None) -> None:
         load_dotenv()
         self._log = ExecutionLog(jsonl_path=log_path)
-        # Mirror the audit trail to Agent Engine observability when opted in (Week 5);
-        # off by default so a plain run / the test suite never calls out. Fail-safe.
+        # Mirror to Agent Engine observability when opted in; off by default (fail-safe).
         if agent_engine_enabled():
             self._log.add_sink(AgentEngineSink())
         # Per-trigger senders, each also demo-tenant-guarded - see the docstring.
@@ -87,15 +87,14 @@ class BoardState:
             inbound_agent=factories.make_inbound_agent(self._log),
         )
         self._payment_plans = PaymentPlanBoard(log=self._log)
+        self._payment_plans.hydrate()
         self._inbound_mail = InboundMailBoard(
             orchestrator=self._inbound_replier, log=self._log, demo_tenant_ids=demo,
-            live_reply_enabled=factories.is_live(inbound_reply_sender),
+            live_reply_enabled=factories.is_live(inbound_reply_sender), plan_board=self._payment_plans,
         )
         self._results: dict[str, PipelineResult] = {}
-        # Payment-event correlation + reconcile idempotency (Stripe poll + webhook),
-        # split out for SRP (see reconcile_ops.py's docstring). Holds `_invoices` and
-        # `_results` by reference - refresh() mutates them in place so the reference
-        # never goes stale.
+        # Payment-event correlation + reconcile idempotency (see reconcile_ops.py).
+        # Holds `_invoices`/`_results` by reference - refresh() mutates in place.
         self._reconcile = ReconciliationDesk(
             minter=self._minter,
             reconciler=self._reconciler,
@@ -114,9 +113,8 @@ class BoardState:
 
     @property
     def inbound_reply_live_enabled(self) -> bool:
-        """Whether InboundMailBoard's autonomous auto-reply sender is live -
-        surfaced separately from live_send_enabled (the approval path) since
-        the two are deliberately independent (see this module's docstring)."""
+        """Whether the inbound auto-reply sender is live - separate from
+        live_send_enabled, the two are deliberately independent (see docstring)."""
         return factories.is_live(self._inbound_replier._sender)
 
     @property
@@ -164,9 +162,8 @@ class BoardState:
             self._reconcile.load_events(db.load_events())
 
     def _record_outbound_send(self, invoice: Invoice, result: PipelineResult) -> Invoice:
-        """After ANY successful send, append an outbound PriorContact - durably and
-        in-memory. Without it, is_new_debtor never flips false, so a reply minutes
-        later re-triggers the same first-contact approval hold (observed bug)."""
+        """After ANY successful send, append an outbound PriorContact (durably +
+        in-memory) - else is_new_debtor never flips false (observed bug)."""
         if result.terminal_state is not TerminalState.SENT or not result.message:
             return invoice
         contact = PriorContact(
@@ -252,6 +249,12 @@ class BoardState:
         found = self.get(invoice_id)
         return self._payment_plans.offer(found[0]) if found else None
 
+    def reoffer_payment_plan(self, invoice_id: str, template: PaymentPlanTemplate) -> PaymentPlan | None:
+        """Vendor-constructed different terms after the debtor asked for them.
+        None if there's no plan to amend or the 3-offer cap is already reached."""
+        found = self.get(invoice_id)
+        return self._payment_plans.reoffer(found[0], template) if found else None
+
     def decide_payment_plan(self, invoice_id: str, approved: bool) -> dict | None:
         """Vendor approve/reject on an offered PaymentPlan (SCHEMA.md §8) - same
         one-tap shape as approve(), re-running the compliance gate on approval via
@@ -275,9 +278,7 @@ class BoardState:
 
     def poll_inbound_mail(self, tenant_id: str) -> list[str]:
         """Poll one tenant's Gmail for new replies (SCHEMA.md §7). No-op ([])
-        if Google OAuth isn't configured at all - same early-exit shape as
-        check_payments()'s `self._minter is None` guard, so a plain run never
-        pays the cost of spawning the MCP subprocess just to have it fail."""
+        if Google OAuth isn't configured - never pays the MCP-subprocess cost."""
         from settl.api.oauth_google import google_oauth_enabled
 
         if not google_oauth_enabled():

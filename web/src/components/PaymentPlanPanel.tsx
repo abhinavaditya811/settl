@@ -11,8 +11,8 @@
 
 import { useEffect, useState } from "react";
 import styled from "styled-components";
-import type { PaymentPlanView, StepView } from "@/lib/types";
-import { decidePaymentPlan, getPaymentPlan, offerPaymentPlan } from "@/lib/api";
+import type { PaymentPlanTemplateInput, PaymentPlanView, StepView } from "@/lib/types";
+import { decidePaymentPlan, getPaymentPlan, offerPaymentPlan, reofferPaymentPlan } from "@/lib/api";
 import { useBoard } from "@/lib/BoardContext";
 
 const Box = styled.div`
@@ -94,6 +94,68 @@ const Note = styled.p`
   color: ${({ theme }) => theme.textMuted};
 `;
 
+const Callout = styled.div<{ $tone: "ok" | "warn" }>`
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border: 1px solid ${({ theme, $tone }) => ($tone === "ok" ? theme.status.sent.fg : theme.status.escalated.fg)}44;
+  background: ${({ theme, $tone }) => ($tone === "ok" ? theme.status.sent.bg : theme.status.escalated.bg)};
+  color: ${({ theme, $tone }) => ($tone === "ok" ? theme.status.sent.fg : theme.status.escalated.fg)};
+  .label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    display: block;
+    margin-bottom: 3px;
+  }
+  .said {
+    color: ${({ theme }) => theme.text};
+    font-style: italic;
+  }
+`;
+
+const ReofferForm = styled.div`
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 8px;
+  input {
+    font: inherit;
+    font-size: 12.5px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.bg};
+    color: ${({ theme }) => theme.text};
+    width: 100%;
+  }
+  label {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: ${({ theme }) => theme.textMuted};
+    margin-bottom: 3px;
+  }
+`;
+
+const LinkBtn = styled.button`
+  margin-top: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.accent};
+  cursor: pointer;
+  text-decoration: underline;
+`;
+
 // Only surface this panel when it's actually relevant: a plan already exists, or
 // the debtor's latest reply asked for one (pipeline.py::handle_inbound tags this
 // as inbound_classifier -> payment_plan_request). Keeps every other invoice's
@@ -111,11 +173,15 @@ const STATUS_TONE: Record<PaymentPlanView["status"], "pending" | "ok" | "bad"> =
   broken: "bad",
 };
 
+const EMPTY_REOFFER: PaymentPlanTemplateInput = { installments: 3, period_days: 30, label: "" };
+
 export default function PaymentPlanPanel({ invoiceId, steps }: { invoiceId: string; steps: StepView[] }) {
   const { notify } = useBoard();
   const [plan, setPlan] = useState<PaymentPlanView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [showReoffer, setShowReoffer] = useState(false);
+  const [reofferTerms, setReofferTerms] = useState<PaymentPlanTemplateInput>(EMPTY_REOFFER);
 
   useEffect(() => {
     let active = true;
@@ -135,6 +201,20 @@ export default function PaymentPlanPanel({ invoiceId, steps }: { invoiceId: stri
       const p = await offerPaymentPlan(invoiceId);
       setPlan(p);
       notify({ tone: "ok", text: "Payment plan offered - waiting on your approval." });
+    } catch (e) {
+      notify({ tone: "err", text: String((e as Error).message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reoffer = async () => {
+    setBusy(true);
+    try {
+      const p = await reofferPaymentPlan(invoiceId, reofferTerms);
+      setPlan(p);
+      setShowReoffer(false);
+      notify({ tone: "ok", text: "New terms offered - waiting on your approval." });
     } catch (e) {
       notify({ tone: "err", text: String((e as Error).message ?? e) });
     } finally {
@@ -192,13 +272,65 @@ export default function PaymentPlanPanel({ invoiceId, steps }: { invoiceId: stri
               </Row>
             ))}
           </Rows>
+          {plan.status === "proposed" && plan.negotiation_outcome === "wants_different_terms" && (
+            <Callout $tone="warn">
+              <span className="label">They asked for something different</span>
+              {plan.requested_terms ? <span className="said">&ldquo;{plan.requested_terms}&rdquo;</span> : null}
+            </Callout>
+          )}
+          {plan.status === "proposed" && plan.negotiation_outcome === "accepted" && (
+            <Callout $tone="ok">
+              <span className="label">They said these terms work</span>
+            </Callout>
+          )}
+
           {plan.status === "proposed" && (
             <>
-              <Note>Waiting on your decision - the debtor hasn&rsquo;t seen these terms yet.</Note>
+              <Note>
+                {plan.negotiation_outcome === "wants_different_terms"
+                  ? "You can still approve the original terms below, or offer what they asked for instead."
+                  : "Waiting on your decision - the debtor hasn't seen these terms yet."}
+              </Note>
               <Actions>
                 <Btn disabled={busy} onClick={() => decide(false)}>Reject</Btn>
                 <Btn $primary disabled={busy} onClick={() => decide(true)}>Approve</Btn>
               </Actions>
+              {plan.can_reoffer && !showReoffer && (
+                <LinkBtn type="button" onClick={() => setShowReoffer(true)}>
+                  Offer different terms instead
+                </LinkBtn>
+              )}
+              {showReoffer && (
+                <ReofferForm>
+                  <div>
+                    <label>Installments</label>
+                    <input
+                      type="number" min={1} max={24} value={reofferTerms.installments}
+                      onChange={(e) => setReofferTerms((t) => ({ ...t, installments: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <label>Days apart</label>
+                    <input
+                      type="number" min={1} max={365} value={reofferTerms.period_days}
+                      onChange={(e) => setReofferTerms((t) => ({ ...t, period_days: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <label>Label</label>
+                    <input
+                      type="text" placeholder="6 installments over 180 days" value={reofferTerms.label}
+                      onChange={(e) => setReofferTerms((t) => ({ ...t, label: e.target.value }))}
+                    />
+                  </div>
+                  <Actions style={{ gridColumn: "1 / -1" }}>
+                    <Btn disabled={busy} onClick={() => setShowReoffer(false)}>Cancel</Btn>
+                    <Btn $primary disabled={busy} onClick={reoffer}>
+                      {busy ? "Offering…" : "Send new terms"}
+                    </Btn>
+                  </Actions>
+                </ReofferForm>
+              )}
             </>
           )}
         </>

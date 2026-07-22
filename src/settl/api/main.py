@@ -13,10 +13,9 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     POST /invoices/{id}/approve     approve a held draft (optional edited message)
     POST /invoices/{id}/flag        flag a decision → guardrail + re-orchestrate
     GET  /guardrails                the stored operator guardrails
-    GET  /invoices/{id}/payment-plan          the offered/active PaymentPlan, if any
-    POST /invoices/{id}/payment-plan/offer    offer the vendor's configured template
-    POST /invoices/{id}/payment-plan/decide   vendor approve/reject (SCHEMA.md §8)
+    GET/POST /invoices/{id}/payment-plan/*    offer/reoffer/decide (api/payment_plan_routes.py)
     GET/PUT /payment-plan-templates/mine      the vendor's own templates (api/tenant_config_routes.py)
+    GET/PUT /payment-plan-autonomy/mine       the vendor's payment-plan autonomy opt-in (SCHEMA.md §8)
     GET  /oauth/google/authorize    redirect to Google's consent screen (api/oauth_routes.py)
     GET  /oauth/google/callback     Google's redirect back after consent
     POST /check-payments            poll Stripe + auto-reconcile paid links (api/poll_routes.py)
@@ -58,19 +57,16 @@ from settl.api.schemas import (
     GuardrailView,
     InvoiceCard,
     InvoiceDetail,
-    InstallmentView,
     ManualEntryResponse,
     ManualInvoiceBody,
     Metrics,
-    PaymentPlanDecisionBody,
-    PaymentPlanDecisionResponse,
-    PaymentPlanView,
     RowIssue,
     StepView,
     TraceEntry,
     WebhookAck,
 )
 from settl.api.oauth_routes import router as oauth_router
+from settl.api.payment_plan_routes import build_router as build_payment_plan_router
 from settl.api.tenant_config_routes import router as tenant_config_router
 from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
@@ -96,6 +92,7 @@ app = FastAPI(title="Settl Engine API", version="0.1.0", lifespan=inbound_poll_s
 app.include_router(oauth_router)
 app.include_router(poll_routes.build_router(state))
 app.include_router(tenant_config_router)
+app.include_router(build_payment_plan_router(state))
 
 _origins = os.environ.get("SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
@@ -236,59 +233,6 @@ def flag(invoice_id: str, body: FlagRequest) -> FlagResponse:
     if out is None:
         raise HTTPException(404, f"unknown invoice {invoice_id}")
     return FlagResponse(**out)
-
-
-def _plan_view(invoice_id: str, plan) -> PaymentPlanView:
-    return PaymentPlanView(
-        invoice_id=invoice_id,
-        status=plan.status.value,
-        installments=[
-            InstallmentView(
-                index=i.index, amount=str(i.amount), due_date=i.due_date.isoformat(),
-                payment_link=i.payment_link,
-                paid_at=i.paid_at.isoformat() if i.paid_at else None,
-            )
-            for i in plan.installments
-        ],
-        source=plan.source.value,
-        template_ref=plan.template_ref,
-        offer_count=plan.offer_count,
-        can_reoffer=plan.can_reoffer,
-    )
-
-
-@app.get("/invoices/{invoice_id}/payment-plan", response_model=PaymentPlanView)
-def get_payment_plan(invoice_id: str) -> PaymentPlanView:
-    if not state.get(invoice_id):
-        raise HTTPException(404, f"unknown invoice {invoice_id}")
-    plan = state.payment_plan(invoice_id)
-    if plan is None:
-        raise HTTPException(404, f"no payment plan offered for {invoice_id}")
-    return _plan_view(invoice_id, plan)
-
-
-@app.post("/invoices/{invoice_id}/payment-plan/offer", response_model=PaymentPlanView)
-def offer_payment_plan(invoice_id: str) -> PaymentPlanView:
-    """Offer the vendor's first-configured template (SCHEMA.md §8). 404s if the
-    tenant has no payment_plan_templates configured - nothing to offer."""
-    if not state.get(invoice_id):
-        raise HTTPException(404, f"unknown invoice {invoice_id}")
-    plan = state.offer_payment_plan(invoice_id)
-    if plan is None:
-        raise HTTPException(409, f"{invoice_id}'s tenant has no payment-plan templates configured")
-    return _plan_view(invoice_id, plan)
-
-
-@app.post("/invoices/{invoice_id}/payment-plan/decide", response_model=PaymentPlanDecisionResponse)
-def decide_payment_plan_route(invoice_id: str, body: PaymentPlanDecisionBody) -> PaymentPlanDecisionResponse:
-    """Vendor approve/reject on an offered plan. The engine decides the outcome
-    (re-running the compliance gate on approval) - this route only projects it."""
-    if not state.get(invoice_id):
-        raise HTTPException(404, f"unknown invoice {invoice_id}")
-    out = state.decide_payment_plan(invoice_id, body.approved)
-    if out is None:
-        raise HTTPException(409, f"{invoice_id} has no offered payment plan to decide")
-    return PaymentPlanDecisionResponse(**out)
 
 
 @app.get("/guardrails", response_model=list[GuardrailView])

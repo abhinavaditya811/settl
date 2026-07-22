@@ -22,7 +22,8 @@ from settl.data.supabase.connection import connect, to_jsonb
 
 _SELECT_SQL = """
     select id, tenant_id, invoice_id, status, installments, source, template_ref,
-           offer_count, proposed_at, decided_at, decided_by, contact_ref
+           offer_count, proposed_at, decided_at, decided_by, contact_ref,
+           negotiation_outcome, requested_terms
     from payment_plans
     order by proposed_at
 """
@@ -30,18 +31,21 @@ _SELECT_SQL = """
 _UPSERT_SQL = """
     insert into payment_plans (
         id, tenant_id, invoice_id, status, installments, source, template_ref,
-        offer_count, proposed_at, decided_at, decided_by, contact_ref, updated_at
+        offer_count, proposed_at, decided_at, decided_by, contact_ref,
+        negotiation_outcome, requested_terms, updated_at
     )
     values (
         %(id)s, %(tenant_id)s, %(invoice_id)s, %(status)s, %(installments)s, %(source)s,
         %(template_ref)s, %(offer_count)s, %(proposed_at)s, %(decided_at)s, %(decided_by)s,
-        %(contact_ref)s, now()
+        %(contact_ref)s, %(negotiation_outcome)s, %(requested_terms)s, now()
     )
     on conflict (id) do update set
         status = excluded.status, installments = excluded.installments,
         source = excluded.source, template_ref = excluded.template_ref,
         offer_count = excluded.offer_count, decided_at = excluded.decided_at,
         decided_by = excluded.decided_by, contact_ref = excluded.contact_ref,
+        negotiation_outcome = excluded.negotiation_outcome,
+        requested_terms = excluded.requested_terms,
         updated_at = now()
 """
 
@@ -80,6 +84,8 @@ def _plan_from_row(r: dict) -> PaymentPlan:
         decided_at=r["decided_at"],
         decided_by=r["decided_by"],
         contact_ref=r["contact_ref"],
+        negotiation_outcome=r["negotiation_outcome"],
+        requested_terms=r["requested_terms"],
     )
 
 
@@ -110,6 +116,8 @@ def upsert_plan(plan: PaymentPlan) -> None:
         "decided_at": plan.decided_at,
         "decided_by": plan.decided_by,
         "contact_ref": plan.contact_ref,
+        "negotiation_outcome": plan.negotiation_outcome,
+        "requested_terms": plan.requested_terms,
     }
     with connect() as conn:
         conn.execute(_UPSERT_SQL, params)

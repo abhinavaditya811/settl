@@ -74,11 +74,13 @@ def _msg(**overrides) -> GmailMessage:
     return GmailMessage(**defaults)
 
 
-def _board(*, live_reply_enabled: bool = True) -> imb.InboundMailBoard:
+def _board(*, live_reply_enabled: bool = True, plan_board=None) -> imb.InboundMailBoard:
     # Default True here so the existing reply-path tests still exercise the real
     # send; production defaults to False (a reply is drafted + shown, never
     # auto-emailed unless SETTL_LIVE_SEND_INBOUND_REPLY is armed).
-    return imb.InboundMailBoard(orchestrator=Orchestrator(), live_reply_enabled=live_reply_enabled)
+    return imb.InboundMailBoard(
+        orchestrator=Orchestrator(), live_reply_enabled=live_reply_enabled, plan_board=plan_board
+    )
 
 
 # --- invoice_id_from_subject -----------------------------------------------------
@@ -160,6 +162,27 @@ def test_handle_message_routes_to_negotiation_when_plan_is_proposed():
     # anything reaching the debtor.
     assert result.terminal_state is TerminalState.HELD
     assert result.message is None
+
+
+def test_handle_message_persists_negotiation_onto_the_plan_board():
+    # Regression: negotiation used to be classified + logged but never SAVED onto
+    # the PaymentPlan itself, so the vendor's UI had no way to see what the debtor
+    # said before approving - a vendor could blindly approve terms the debtor had
+    # already asked to change.
+    inv = _repeat_payer()
+    plan = PaymentPlan(
+        id="pp-1", tenant_id="t_demo", invoice_id="INV-005", status=PaymentPlanStatus.PROPOSED,
+        installments=(Installment(index=0, amount=Decimal("300"), due_date=date.today()),),
+    )
+    captured = {}
+
+    class _FakePlanBoard:
+        def record_negotiation(self, invoice_id, outcome, requested_terms):
+            captured["args"] = (invoice_id, outcome, requested_terms)
+
+    board = _board(plan_board=_FakePlanBoard())
+    board.handle_message(inv, _msg(body_text="actually can we do 6 months instead?"), plan=plan)
+    assert captured["args"] == ("INV-005", "wants_different_terms", "actually can we do 6 months instead?")
 
 
 def test_handle_message_ignores_a_completed_plan():
