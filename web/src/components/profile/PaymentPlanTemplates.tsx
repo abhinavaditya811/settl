@@ -8,7 +8,12 @@
 import { useEffect, useState } from "react";
 import styled from "styled-components";
 import type { PaymentPlanTemplateInput } from "@/lib/types";
-import { getPaymentPlanTemplates, savePaymentPlanTemplates } from "@/lib/api";
+import {
+  getPaymentPlanAutonomy,
+  getPaymentPlanTemplates,
+  savePaymentPlanTemplates,
+  setPaymentPlanAutonomy,
+} from "@/lib/api";
 
 const Card = styled.div`
   max-width: 480px;
@@ -23,6 +28,41 @@ const Head = styled.div`
   margin-bottom: 4px;
   .t { font-size: 15px; font-weight: 700; }
   .s { font-size: 12.5px; color: ${({ theme }) => theme.textMuted}; margin-top: 2px; }
+`;
+
+const AutonomyRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid ${({ theme }) => theme.border};
+  .t { font-size: 13px; font-weight: 700; }
+  .s { font-size: 12px; color: ${({ theme }) => theme.textMuted}; margin-top: 2px; max-width: 340px; }
+`;
+
+const Switch = styled.button<{ $on: boolean }>`
+  flex-shrink: 0;
+  width: 40px;
+  height: 23px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  background: ${({ theme, $on }) => ($on ? theme.accent : theme.border)};
+  transition: background 0.15s ease;
+  &:disabled { opacity: 0.6; cursor: progress; }
+  &::after {
+    content: "";
+    display: block;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: #fff;
+    transform: translateX(${({ $on }) => ($on ? "17px" : "0")});
+    transition: transform 0.15s ease;
+  }
 `;
 
 const List = styled.ul`
@@ -107,12 +147,31 @@ export default function PaymentPlanTemplates() {
   const [templates, setTemplates] = useState<PaymentPlanTemplateInput[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ text: string; err?: boolean } | null>(null);
+  const [autonomy, setAutonomy] = useState<boolean | null>(null);
+  const [autonomyBusy, setAutonomyBusy] = useState(false);
 
   useEffect(() => {
     getPaymentPlanTemplates()
       .then(setTemplates)
       .catch((e) => setStatus({ text: String((e as Error).message ?? e), err: true }));
+    getPaymentPlanAutonomy()
+      .then((a) => setAutonomy(a.enabled))
+      .catch(() => setAutonomy(false));
   }, []);
+
+  const toggleAutonomy = async () => {
+    if (autonomy === null) return;
+    const next = !autonomy;
+    setAutonomyBusy(true);
+    try {
+      const res = await setPaymentPlanAutonomy(next);
+      setAutonomy(res.enabled);
+    } catch (e) {
+      setStatus({ text: String((e as Error).message ?? e), err: true });
+    } finally {
+      setAutonomyBusy(false);
+    }
+  };
 
   const update = (i: number, patch: Partial<PaymentPlanTemplateInput>) => {
     setTemplates((cur) => (cur ?? []).map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
@@ -193,6 +252,26 @@ export default function PaymentPlanTemplates() {
             <Status>No templates yet - the Offer button won&rsquo;t work until you add at least one.</Status>
           )}
           {status && <Status $err={status.err}>{status.text}</Status>}
+
+          <AutonomyRow>
+            <div>
+              <div className="t">Confirm the plan to the debtor as soon as I approve it</div>
+              <div className="s">
+                With this off, approving a plan records your decision but doesn&rsquo;t yet notify
+                the debtor. A plan is never offered or changed without your explicit approve/reject
+                either way.
+              </div>
+            </div>
+            <Switch
+              type="button"
+              role="switch"
+              aria-checked={autonomy ?? false}
+              aria-label="Confirm approved payment plans automatically"
+              $on={autonomy ?? false}
+              disabled={autonomy === null || autonomyBusy}
+              onClick={toggleAutonomy}
+            />
+          </AutonomyRow>
         </>
       )}
     </Card>

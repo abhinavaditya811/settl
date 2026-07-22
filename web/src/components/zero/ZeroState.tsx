@@ -5,10 +5,11 @@
 // not a toggle here - so there is no path back to synthetic data from this
 // screen. Guides the onboarding path (FR-15/FR-16).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import styled from "styled-components";
 import { signOut, useSession } from "next-auth/react";
+import { getPaymentPlanAutonomy, setPaymentPlanAutonomy } from "@/lib/api";
 import UploadCsvModal from "./UploadCsvModal";
 import ManualEntryModal from "./ManualEntryModal";
 
@@ -28,6 +29,26 @@ export default function ZeroState({ onOwnDataAdded }: Props) {
   const { data: session } = useSession();
   const email = session?.user?.email;
   const [modal, setModal] = useState<"csv" | "manual" | null>(null);
+  const [autonomy, setAutonomy] = useState<boolean | null>(null);
+  const [autonomyBusy, setAutonomyBusy] = useState(false);
+
+  useEffect(() => {
+    getPaymentPlanAutonomy()
+      .then((a) => setAutonomy(a.enabled))
+      .catch(() => setAutonomy(false));
+  }, []);
+
+  const chooseAutonomy = async (enabled: boolean) => {
+    setAutonomyBusy(true);
+    try {
+      const res = await setPaymentPlanAutonomy(enabled);
+      setAutonomy(res.enabled);
+    } catch {
+      /* the Profile tab is the durable fallback if this write fails */
+    } finally {
+      setAutonomyBusy(false);
+    }
+  };
 
   return (
     <Wrap>
@@ -55,6 +76,25 @@ export default function ZeroState({ onOwnDataAdded }: Props) {
           </Step>
         ))}
       </Steps>
+
+      <AutonomyCard>
+        <h3>Payment plans</h3>
+        <p>
+          A debtor can ask to pay an invoice in installments. Settl will never offer or change
+          terms without your explicit approve/reject - this only controls what happens the
+          moment you approve one: with this off, approving records your decision but doesn&rsquo;t
+          yet notify the debtor. Change this anytime in your Profile.
+        </p>
+        <AutonomyToggleRow>
+          <span>Confirm the plan to the debtor as soon as I approve it</span>
+          <AutonomySwitch
+            type="button" role="switch" aria-checked={autonomy ?? false}
+            aria-label="Confirm approved payment plans automatically"
+            $on={autonomy ?? false} disabled={autonomy === null || autonomyBusy}
+            onClick={() => chooseAutonomy(!(autonomy ?? false))}
+          />
+        </AutonomyToggleRow>
+      </AutonomyCard>
 
       <Options>
         <Option $primary>
@@ -185,6 +225,61 @@ const Step = styled.li<{ $done: boolean }>`
     color: ${({ theme, $done }) => ($done ? theme.accentText : theme.textMuted)};
     background: ${({ theme, $done }) => ($done ? theme.accent : theme.surfaceAlt)};
     border: 1px solid ${({ theme }) => theme.border};
+  }
+`;
+
+const AutonomyCard = styled.div`
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: ${({ theme }) => theme.surface};
+  border: 1px solid ${({ theme }) => theme.border};
+  h3 {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: ${({ theme }) => theme.textMuted};
+  }
+`;
+
+const AutonomyToggleRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid ${({ theme }) => theme.border};
+  span {
+    font-size: 13px;
+    font-weight: 600;
+  }
+`;
+
+const AutonomySwitch = styled.button<{ $on: boolean }>`
+  flex-shrink: 0;
+  width: 40px;
+  height: 23px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  background: ${({ theme, $on }) => ($on ? theme.accent : theme.border)};
+  transition: background 0.15s ease;
+  &:disabled { opacity: 0.6; cursor: progress; }
+  &::after {
+    content: "";
+    display: block;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: #fff;
+    transform: translateX(${({ $on }) => ($on ? "17px" : "0")});
+    transition: transform 0.15s ease;
   }
 `;
 

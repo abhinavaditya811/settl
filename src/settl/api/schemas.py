@@ -194,6 +194,11 @@ class PaymentPlanView(BaseModel):
     template_ref: str | None = None
     offer_count: int
     can_reoffer: bool
+    # The debtor's response to the CURRENT offer, if any (agents/payment_plan/
+    # negotiate.py) - surfaced so the vendor sees it before deciding, not just in
+    # the execution log. Cleared to None on a fresh offer/reoffer.
+    negotiation_outcome: str | None = None  # "accepted" | "wants_different_terms" | None
+    requested_terms: str | None = None
 
 
 class PaymentPlanDecisionBody(BaseModel):
@@ -216,3 +221,7 @@ class PaymentPlanTemplateView(BaseModel):
 
 class PaymentPlanTemplatesBody(BaseModel):
     templates: list[PaymentPlanTemplateView]
+
+
+class PaymentPlanAutonomyView(BaseModel):
+    enabled: bool

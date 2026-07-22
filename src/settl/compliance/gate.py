@@ -70,7 +70,7 @@ class ComplianceGate:
         *,
         frequency_window: int | None = None,
         frequency_max: int | None = None,
-        payment_plan_autonomy: bool = False,
+        payment_plan_autonomy: bool | None = None,
         payment_plan_min_amount: Decimal | None = None,
         rules_store: RuleStore | None = None,
     ) -> None:
@@ -80,7 +80,13 @@ class ComplianceGate:
         self._frequency_max = frequency_max
         # Payment-plan autonomy opt-in (SCHEMA.md §8) - off unless a tenant enables
         # it; a vendor can only unlock the PaymentPlan lane, never bypass any other
-        # compliance rule (is_b2b, dispute, etc. are untouched by this).
+        # compliance rule (is_b2b, dispute, etc. are untouched by this). None (the
+        # default) means "not fixed here" - evaluate() resolves it fresh per-invoice
+        # via config_for(invoice.tenant_id), so a single shared gate (BoardState's
+        # live wiring, one Orchestrator for every tenant) still honors each
+        # tenant's own opt-in instead of a permanent False baked in at startup. An
+        # explicit True/False (tests, or Orchestrator(config=...) for a known
+        # tenant) always wins over the per-invoice lookup.
         self._payment_plan_autonomy = payment_plan_autonomy
         self._payment_plan_min_amount = payment_plan_min_amount
         # Operator guardrails (human-in-the-loop feedback). They can only make the gate
@@ -104,10 +110,18 @@ class ComplianceGate:
                 invoice, self._frequency_window, self._frequency_max
             )
         )
+        autonomy = self._payment_plan_autonomy
+        if autonomy is None:
+            # Deferred import: settl.data transitively imports settl.compliance
+            # (agents.payment_plan.negotiate -> compliance.patterns), so a
+            # module-level import here would be a genuine circular import.
+            from settl.data import config_for
+
+            autonomy = config_for(invoice.tenant_id).policy.payment_plan_autonomy
         violations.extend(
             rules.rule_payment_plan_request(
                 invoice,
-                autonomy_enabled=self._payment_plan_autonomy,
+                autonomy_enabled=autonomy,
                 min_amount=self._payment_plan_min_amount,
             )
         )

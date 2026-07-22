@@ -1,12 +1,18 @@
-"""Per-tenant payment-plan template config: config_for()'s Supabase fallback for
-a real (non-synthetic) tenant, and the /payment-plan-templates/mine routes."""
+"""Per-tenant payment-plan config: config_for()'s Supabase fallback for a real
+(non-synthetic) tenant, and the /payment-plan-templates + /payment-plan-autonomy
+"mine" routes."""
 
 import pytest
 from fastapi import HTTPException
 
 from settl.api.identity import BoardScope
-from settl.api.schemas import PaymentPlanTemplatesBody, PaymentPlanTemplateView
-from settl.api.tenant_config_routes import get_my_payment_plan_templates, set_my_payment_plan_templates
+from settl.api.schemas import PaymentPlanAutonomyView, PaymentPlanTemplatesBody, PaymentPlanTemplateView
+from settl.api.tenant_config_routes import (
+    get_my_payment_plan_autonomy,
+    get_my_payment_plan_templates,
+    set_my_payment_plan_autonomy,
+    set_my_payment_plan_templates,
+)
 from settl.data import tenants as tenants_mod
 from settl.tenancy.config import PaymentPlanTemplate
 
@@ -28,6 +34,13 @@ def test_config_for_reads_supabase_policy_overrides_for_a_real_tenant(monkeypatc
     )
     c = tenants_mod.config_for("some-real-tenant")
     assert c.policy.payment_plan_templates == (PaymentPlanTemplate(installments=3, period_days=30, label="x"),)
+
+
+def test_config_for_reads_autonomy_alongside_templates(monkeypatch):
+    monkeypatch.setattr(tenants_mod, "supabase_enabled", lambda: True)
+    monkeypatch.setattr(tenants_mod, "load_policy_overrides", lambda tid: {"payment_plan_autonomy": True})
+    c = tenants_mod.config_for("some-real-tenant")
+    assert c.policy.payment_plan_autonomy is True
 
 
 def test_config_for_demo_tenant_never_touches_supabase(monkeypatch):
@@ -79,3 +92,34 @@ def test_set_my_templates_writes_for_the_scoped_tenant(monkeypatch):
     assert captured["tenant_id"] == "tenant-42"
     assert captured["templates"] == [{"installments": 4, "period_days": 60, "label": "four"}]
     assert out == body.templates
+
+
+# -- /payment-plan-autonomy/mine routes -------------------------------------------
+
+
+def test_get_my_autonomy_reflects_config_for(monkeypatch):
+    monkeypatch.setattr(
+        "settl.api.tenant_config_routes.config_for",
+        lambda tid: type("C", (), {"policy": type("P", (), {"payment_plan_autonomy": True})()})(),
+    )
+    out = get_my_payment_plan_autonomy(scope=_scope())
+    assert out == PaymentPlanAutonomyView(enabled=True)
+
+
+def test_set_my_autonomy_requires_supabase(monkeypatch):
+    monkeypatch.setattr("settl.api.tenant_config_routes.db.supabase_enabled", lambda: False)
+    with pytest.raises(HTTPException) as exc:
+        set_my_payment_plan_autonomy(PaymentPlanAutonomyView(enabled=True), scope=_scope())
+    assert exc.value.status_code == 503
+
+
+def test_set_my_autonomy_writes_for_the_scoped_tenant(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("settl.api.tenant_config_routes.db.supabase_enabled", lambda: True)
+    monkeypatch.setattr(
+        "settl.api.tenant_config_routes.db.set_payment_plan_autonomy",
+        lambda tid, enabled: captured.update(tenant_id=tid, enabled=enabled),
+    )
+    out = set_my_payment_plan_autonomy(PaymentPlanAutonomyView(enabled=True), scope=_scope("tenant-42"))
+    assert captured == {"tenant_id": "tenant-42", "enabled": True}
+    assert out == PaymentPlanAutonomyView(enabled=True)

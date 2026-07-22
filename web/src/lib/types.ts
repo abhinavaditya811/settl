@@ -81,6 +81,8 @@ export interface InstallmentView {
 
 export type PaymentPlanStatus = "proposed" | "approved" | "rejected" | "active" | "broken" | "completed";
 
+export type NegotiationOutcome = "accepted" | "wants_different_terms";
+
 export interface PaymentPlanView {
   invoice_id: string;
   status: PaymentPlanStatus;
@@ -89,6 +91,10 @@ export interface PaymentPlanView {
   template_ref: string | null;
   offer_count: number;
   can_reoffer: boolean;
+  // The debtor's response to the CURRENT offer, if any - cleared on a fresh
+  // offer/reoffer. Surfaced so the vendor sees it before deciding.
+  negotiation_outcome: NegotiationOutcome | null;
+  requested_terms: string | null;
 }
 
 export interface PaymentPlanDecisionResponse {
@@ -106,6 +112,12 @@ export interface PaymentPlanTemplateInput {
   installments: number;
   period_days: number;
   label: string;
+}
+
+// Whether an explicit vendor approve/reject may confirm a payment plan to the
+// debtor (SCHEMA.md §8) - asked at signup, changeable in the Profile tab.
+export interface PaymentPlanAutonomy {
+  enabled: boolean;
 }
 
 // Human-in-the-loop: flag a decision → guardrail + re-orchestrate.

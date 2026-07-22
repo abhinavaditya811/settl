@@ -12,7 +12,11 @@ from settl.data.supabase.invoices import load_invoices
 from settl.data.supabase.oauth_tokens_store import list_connected_tenants, load_token, upsert_token
 from settl.data.supabase.payment_events_store import load_events, upsert_event
 from settl.data.supabase.payment_plans_store import load_plans, upsert_plan
-from settl.data.supabase.tenant_config_store import load_policy_overrides, set_payment_plan_templates
+from settl.data.supabase.tenant_config_store import (
+    load_policy_overrides,
+    set_payment_plan_autonomy,
+    set_payment_plan_templates,
+)
 from settl.data.supabase.tenant_store import get_or_create_tenant
 
 __all__ = [
@@ -35,4 +39,5 @@ __all__ = [
     "insert_invoices",
     "load_policy_overrides",
     "set_payment_plan_templates",
+    "set_payment_plan_autonomy",
 ]

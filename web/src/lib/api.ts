@@ -16,6 +16,7 @@ import type {
   ManualEntryResponse,
   ManualInvoiceBody,
   Metrics,
+  PaymentPlanAutonomy,
   PaymentPlanDecisionResponse,
   PaymentPlanTemplateInput,
   PaymentPlanView,
@@ -92,6 +93,16 @@ export const getPaymentPlan = async (id: string): Promise<PaymentPlanView | null
 export const offerPaymentPlan = (id: string) =>
   getJSON<PaymentPlanView>(`/api/invoices/${id}/payment-plan/offer`, { method: "POST" });
 
+// Vendor-constructed terms, typically after the debtor asked for something
+// different (negotiation_outcome === "wants_different_terms") - amends the same
+// plan in place, still needs the vendor's explicit approve/reject to confirm.
+export const reofferPaymentPlan = (id: string, template: PaymentPlanTemplateInput) =>
+  getJSON<PaymentPlanView>(`/api/invoices/${id}/payment-plan/reoffer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(template),
+  });
+
 // Vendor approve/reject on an offered plan - the only step that can ever confirm
 // terms to the debtor (re-gated server-side on approval).
 export const decidePaymentPlan = (id: string, approved: boolean) =>
@@ -111,6 +122,18 @@ export const savePaymentPlanTemplates = (templates: PaymentPlanTemplateInput[]) 
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ templates }),
+  });
+
+// Whether the vendor opted in to letting an explicit approve/reject confirm a
+// payment plan to the debtor - asked at signup, changeable in the Profile tab.
+export const getPaymentPlanAutonomy = () =>
+  getJSON<PaymentPlanAutonomy>("/api/payment-plan-autonomy");
+
+export const setPaymentPlanAutonomy = (enabled: boolean) =>
+  getJSON<PaymentPlanAutonomy>("/api/payment-plan-autonomy", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled }),
   });
 
 // Flag a decision: the engine stores a guardrail and re-orchestrates this invoice.
