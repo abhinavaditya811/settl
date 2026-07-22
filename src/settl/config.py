@@ -23,7 +23,10 @@ DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
 # High-volume routing model (CLAUDE.md: Flash for orchestrator-style routing, Pro for
 # judgment). Used by the inbound classifier (agents/inbound) - classifying a reply's
-# lane is routing, not drafting/strategy judgment.
+# lane is routing, not drafting/strategy judgment. Preview models often have the
+# tightest free-tier quota (429) - set GEMINI_FLASH_MODEL=gemini-2.5-flash-lite (a
+# small, higher-quota model that classifies mail intent well) to override. Fail-safe:
+# on any 429/error the classifier falls back to the deterministic regex backstop.
 DEFAULT_GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
 
 

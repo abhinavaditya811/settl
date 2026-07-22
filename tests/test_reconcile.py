@@ -115,6 +115,46 @@ def test_paid_records_fee_stops_loop_and_notifies():
     assert sent and "INV-R" in sent[0][1]
 
 
+def test_demo_tenant_notification_is_logged_but_not_emailed(monkeypatch):
+    # Regression: the OperatorNotifier is a SEPARATE email path from the debtor
+    # sender - on every restart the replay of persisted payment events re-fired a
+    # batch of "[Settl] Recovered / Needs review" emails for the ~25 synthetic
+    # seed invoices, spamming the operator's own inbox.
+    monkeypatch.delenv("SETTL_LIVE_SEND_DEMO", raising=False)
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_demo"}),
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+    assert sent == []  # no email for a demo tenant
+    assert any(e.agent == "reconcile_notify" for e in log.entries)  # still logged
+
+
+def test_demo_notification_emails_when_opted_in(monkeypatch):
+    monkeypatch.setenv("SETTL_LIVE_SEND_DEMO", "1")
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_demo"}),
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+    assert sent and "INV-R" in sent[0][1]  # opted in - demo notice goes out
+
+
+def test_non_demo_tenant_still_notifies():
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_other"}),  # t_demo is NOT demo here
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+    assert sent and "INV-R" in sent[0][1]
+
+
 def test_unpaid_does_not_record_a_fee_or_stop():
     agent = ReconcileAgent()
     outcome = agent.reconcile(_inv(), [])

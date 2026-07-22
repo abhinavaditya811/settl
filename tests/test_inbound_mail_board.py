@@ -74,8 +74,11 @@ def _msg(**overrides) -> GmailMessage:
     return GmailMessage(**defaults)
 
 
-def _board() -> imb.InboundMailBoard:
-    return imb.InboundMailBoard(orchestrator=Orchestrator())
+def _board(*, live_reply_enabled: bool = True) -> imb.InboundMailBoard:
+    # Default True here so the existing reply-path tests still exercise the real
+    # send; production defaults to False (a reply is drafted + shown, never
+    # auto-emailed unless SETTL_LIVE_SEND_INBOUND_REPLY is armed).
+    return imb.InboundMailBoard(orchestrator=Orchestrator(), live_reply_enabled=live_reply_enabled)
 
 
 # --- invoice_id_from_subject -----------------------------------------------------
@@ -212,6 +215,64 @@ def test_poll_correlates_and_processes_new_messages():
     assert changed[0][1].terminal_state is TerminalState.SENT
     assert sent["thread_id"] == "t1"
     assert sent["to"] == "ap@acme.test"  # parsed out of "Acme AP <ap@acme.test>"
+
+
+def test_poll_does_not_really_send_when_inbound_live_is_off():
+    # Regression: the orchestrator's inbound sender only runs the GATE - the real
+    # threaded Gmail reply is _send_and_record's `send`. With inbound live-send off
+    # (production default) a benign reply is drafted + shown on the board, but the
+    # real Gmail send must NOT fire. Previously it always did, causing a live loop.
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board(live_reply_enabled=False)
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg())],
+        send=lambda *a, **k: send_calls.append((a, k)) or "<x@gmail>",
+    )
+    assert send_calls == []  # the real Gmail reply never fired
+    assert changed[0][1].terminal_state is TerminalState.SENT  # gate still cleared it
+
+
+def test_poll_skips_settl_own_notification_emails():
+    # Regression: "[Settl] Recovered - INV-005" is Settl's OWN operator notification
+    # (notify.py), self-sent to the operator's inbox. Its subject correlates to the
+    # invoice, so the poller used to treat it as a debtor reply and auto-reply to
+    # its own notification - a self-loop. It must be skipped outright.
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board()
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg(subject="[Settl] Recovered - INV-005"))],
+        send=lambda *a, **k: send_calls.append(1) or "<x@gmail>",
+    )
+    assert changed == []
+    assert send_calls == []
+
+
+def test_poll_skips_our_own_outreach_read_back_as_inbound(monkeypatch):
+    # Regression: our own chase "[Settl] Invoice reminder - INV-005" shares its
+    # subject with a debtor's reply, so subject alone can't tell them apart - but
+    # the From address can. Our outreach is FROM the operator (SETTL_SMTP_USER);
+    # a debtor reply is not. Without the From skip the poller re-ingested our own
+    # chase as a 'reply', classified it, and drafted another (a spurious pass).
+    from types import SimpleNamespace
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
+    monkeypatch.setattr(imb, "config_for", lambda tid: SimpleNamespace(identity=SimpleNamespace(from_address=None)))
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board()
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg(
+            from_address="Our Company <vendor@ourco.test>",
+            subject="[Settl] Invoice reminder - INV-005",
+        ))],
+        send=lambda *a, **k: send_calls.append(1) or "<x@gmail>",
+    )
+    assert changed == []       # our own outreach, not processed
+    assert send_calls == []    # and certainly no auto-reply to ourselves
 
 
 def test_poll_skips_uncorrelated_messages_without_raising():

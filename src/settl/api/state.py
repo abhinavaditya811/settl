@@ -1,19 +1,17 @@
 """BoardState - the engine running in-process behind the API.
 
-Runs the orchestrator over the dataset and holds the per-invoice results so the dashboard
+Runs the orchestrator over the dataset and holds per-invoice results so the dashboard
 can read the board, drill into a trace, approve a held draft, and flag a decision.
 
 Sending is safe by default and opt-in for real. Every UNATTENDED path (batch,
 inbound auto-reply) is on its own sender, separate from a deliberate human
 approval, and each needs its own opt-in beyond SETTL_LIVE_SEND:
   * **Default** - everything is mocked; no email leaves ("would send …").
-  * **Approvals** (``SETTL_LIVE_SEND=1`` + ``SETTL_TEST_RECIPIENT``) - a one-tap human
-    approval delivers real email, redirected to the operator's own inbox. The only
-    sender ``SETTL_LIVE_SEND`` alone controls - the two below need a second opt-in.
-  * **The board batch** (every startup/``/refresh``, over the FULL dataset - real
-    test invoices mixed with synthetic seed rows) needs ``SETTL_LIVE_SEND_BATCH=1``,
-    or a plain restart silently re-sends live email to every non-first-contact
-    invoice, seed rows included (happened once already).
+  * **Approvals** (``SETTL_LIVE_SEND=1`` + ``SETTL_TEST_RECIPIENT``) - a one-tap approval
+    delivers real email. The only sender ``SETTL_LIVE_SEND`` alone controls.
+  * **The board batch** (every startup/``/refresh``, over the FULL dataset) needs
+    ``SETTL_LIVE_SEND_BATCH=1``, or a plain restart silently re-sends live email to
+    every non-first-contact invoice, seed rows included (happened once already).
   * **Inbound auto-replies** (a repeat debtor's benign reply - "later touches may go
     autonomous") needs ``SETTL_LIVE_SEND_INBOUND_REPLY=1``, or arming the scheduled
     poller (api/inbound_poll_scheduler.py) together with live approvals silently
@@ -21,8 +19,14 @@ approval, and each needs its own opt-in beyond SETTL_LIVE_SEND:
     poller stays useful with this off - it still reads/classifies/logs replies and
     reflects escalations on the board, it just won't fire an email on its own.
 
-State is in-memory and per-process (fine for a single-instance demo); a durable store is
-a later concern.
+All three are ALSO wrapped with a second, orthogonal guard keyed on WHOSE data it is:
+an invoice on a demo/synthetic tenant (``identity.demo_tenant_ids()``) always uses the
+mock path regardless of the flags above, since the public ``/demo`` page needs no login
+- else a visitor clicking "Approve & Send" there could fire a real email. The
+OperatorNotifier (agents/reconcile/notify.py) has the SAME guard for its own email path.
+Opt out of both with ``SETTL_LIVE_SEND_DEMO=1`` (e.g. for a real showcase).
+
+State is in-memory and per-process; a durable store is a later concern.
 """
 
 from __future__ import annotations
@@ -33,13 +37,14 @@ from pathlib import Path
 from settl.adapters.csv_adapter import CsvImportResult, parse_csv
 from settl.adapters.manual_entry import ManualInvoiceInput, build_manual_invoice
 from settl.agents.reconcile import OperatorNotifier, ReconcileAgent
-from settl.audit import AgentEngineSink, ExecutionLog, agent_engine_enabled
+from settl.audit import AgentEngineSink, ExecutionLog, agent_engine_enabled, deduped_entries
 from settl.compliance.rules import WAIVABLE_CODES
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.data import supabase as db
 from settl.agents.payment_plan.models import PaymentPlan
 from settl.api import engine_factories as factories
+from settl.api.identity import demo_tenant_ids
 from settl.api.inbound_mail_board import InboundMailBoard
 from settl.api.metrics import compute_metrics
 from settl.api.payment_plan_board import PaymentPlanBoard
@@ -47,8 +52,7 @@ from settl.api.reconcile_ops import ReconciliationDesk
 from settl.governance import Directive, OperatorRule, RuleStore, Scope
 from settl.orchestrator import Orchestrator, TerminalState
 from settl.orchestrator.result import PipelineResult
-from settl.schema.invoice import Channel, Invoice
-from settl.sending import GmailSmtpSender
+from settl.schema.invoice import Channel, ContactDirection, Invoice, PriorContact
 
 
 class BoardState:
@@ -59,23 +63,20 @@ class BoardState:
         # off by default so a plain run / the test suite never calls out. Fail-safe.
         if agent_engine_enabled():
             self._log.add_sink(AgentEngineSink())
-        # Separate senders per trigger source - see this module's docstring for why.
-        approval_sender = factories.make_sender(self._log)
-        batch_sender = factories.make_sender(self._log, extra_gate="SETTL_LIVE_SEND_BATCH")
-        inbound_reply_sender = factories.make_sender(
-            self._log, extra_gate="SETTL_LIVE_SEND_INBOUND_REPLY"
-        )
+        # Per-trigger senders, each also demo-tenant-guarded - see the docstring.
+        approval_sender = factories.make_guarded_sender(self._log)
+        batch_sender = factories.make_guarded_sender(self._log, extra_gate="SETTL_LIVE_SEND_BATCH")
+        inbound_reply_sender = factories.make_guarded_sender(self._log, extra_gate="SETTL_LIVE_SEND_INBOUND_REPLY")
         drafter = factories.make_drafter(self._log)
         self._minter = factories.make_minter()
-        self._reconciler = ReconcileAgent(log=self._log, notifier=OperatorNotifier(log=self._log))
-        # Operator guardrails (human-in-the-loop), shared by reference into both
-        # orchestrators so a flag is honored on re-orchestration and every future run.
+        demo = demo_tenant_ids()
+        notifier = OperatorNotifier(log=self._log, demo_tenant_ids=demo)
+        self._reconciler = ReconcileAgent(log=self._log, notifier=notifier)
+        # Operator guardrails, shared by reference so a flag is honored on re-orchestration.
         self._rules = RuleStore()
         self._invoices: dict[str, Invoice] = {}
         if db.supabase_enabled():
-            # Durable mirror of every decision (Postgres survives a restart; the
-            # in-memory list ExecutionLog.clear()s on refresh stays the dashboard's
-            # live view - see PostgresLogSink's docstring).
+            # Durable mirror of every decision - see PostgresLogSink's docstring.
             self._log.add_sink(db.PostgresLogSink(tenant_of=self._tenant_of))
             for rule in db.load_rules():
                 self._rules.add(rule)
@@ -86,7 +87,10 @@ class BoardState:
             inbound_agent=factories.make_inbound_agent(self._log),
         )
         self._payment_plans = PaymentPlanBoard(log=self._log)
-        self._inbound_mail = InboundMailBoard(orchestrator=self._inbound_replier, log=self._log)
+        self._inbound_mail = InboundMailBoard(
+            orchestrator=self._inbound_replier, log=self._log, demo_tenant_ids=demo,
+            live_reply_enabled=factories.is_live(inbound_reply_sender),
+        )
         self._results: dict[str, PipelineResult] = {}
         # Payment-event correlation + reconcile idempotency (Stripe poll + webhook),
         # split out for SRP (see reconcile_ops.py's docstring). Holds `_invoices` and
@@ -106,14 +110,14 @@ class BoardState:
 
     @property
     def live_send_enabled(self) -> bool:
-        return isinstance(self._approver._sender, GmailSmtpSender)
+        return factories.is_live(self._approver._sender)
 
     @property
     def inbound_reply_live_enabled(self) -> bool:
         """Whether InboundMailBoard's autonomous auto-reply sender is live -
         surfaced separately from live_send_enabled (the approval path) since
         the two are deliberately independent (see this module's docstring)."""
-        return isinstance(self._inbound_replier._sender, GmailSmtpSender)
+        return factories.is_live(self._inbound_replier._sender)
 
     @property
     def gemini_enabled(self) -> bool:
@@ -145,10 +149,34 @@ class BoardState:
         # reference and the reference must survive every refresh().
         self._invoices.clear()
         self._invoices.update({inv.invoice_id: inv for inv in invoices})
+        fresh_results = {r.invoice_id: r for r in self._board.run_batch(invoices)}
+        for invoice_id, new_result in fresh_results.items():
+            old_result = self._results.get(invoice_id)
+            if old_result is not None and old_result.is_unresolved_inbound_escalation:
+                fresh_results[invoice_id] = old_result  # don't clobber a pending debtor escalation
         self._results.clear()
-        self._results.update({r.invoice_id: r for r in self._board.run_batch(invoices)})
+        self._results.update(fresh_results)
+        for invoice_id, result in self._results.items():
+            self._invoices[invoice_id] = self._record_outbound_send(
+                self._invoices[invoice_id], result
+            )
         if db.supabase_enabled():
             self._reconcile.load_events(db.load_events())
+
+    def _record_outbound_send(self, invoice: Invoice, result: PipelineResult) -> Invoice:
+        """After ANY successful send, append an outbound PriorContact - durably and
+        in-memory. Without it, is_new_debtor never flips false, so a reply minutes
+        later re-triggers the same first-contact approval hold (observed bug)."""
+        if result.terminal_state is not TerminalState.SENT or not result.message:
+            return invoice
+        contact = PriorContact(
+            occurred_on=date.today(), direction=ContactDirection.OUTBOUND,
+            channel=Channel(result.channel) if result.channel else Channel.EMAIL,
+            summary=result.message[:500],
+        )
+        if db.supabase_enabled():
+            db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        return invoice.model_copy(update={"prior_contacts": [*invoice.prior_contacts, contact]})
 
     def results(
         self, tenant_ids: frozenset[str] | None = None
@@ -165,6 +193,11 @@ class BoardState:
         return self._invoices[invoice_id], self._results[invoice_id]
 
     def trace(self, invoice_id: str):
+        # Durable full-lifetime timeline (deduped) when Postgres is on; else in-memory (this run).
+        if db.supabase_enabled():
+            tenant_id = self._tenant_of(invoice_id)
+            if tenant_id:
+                return deduped_entries(db.load_execution_log(tenant_id, invoice_id))
         return self._log.for_invoice(invoice_id)
 
     def counts(self, tenant_ids: frozenset[str] | None = None) -> dict[str, int]:
@@ -208,6 +241,7 @@ class BoardState:
         channel = Channel(result.channel) if result.channel else None
         outgoing = message.strip() if message and message.strip() else result.message
         new_result = self._approver.approve_and_send(invoice, outgoing, channel)
+        self._invoices[invoice_id] = self._record_outbound_send(invoice, new_result)
         self._results[invoice_id] = new_result  # reflect the outcome on the board
         return new_result
 

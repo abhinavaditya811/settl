@@ -7,10 +7,15 @@ bad draft on the chase path, the unpaid loop re-queues the right ones, and every
 invoice leaves an audit trail.
 """
 
+from datetime import date, timedelta
+from decimal import Decimal
+
 from settl.audit import ExecutionLog
 from settl.data import load_synthetic_invoices
+from settl.governance import Directive, OperatorRule, RuleStore, Scope
 from settl.orchestrator import Orchestrator, TerminalState, next_touch
 from settl.orchestrator.result import REQUEUE_STATES
+from settl.schema.invoice import Channel, ContactDirection, Invoice, InvoiceStatus, PriorContact, Source
 from settl.schema.validation import validate_invoice
 
 SENDABLE = (TerminalState.SENT, TerminalState.AWAITING_APPROVAL)
@@ -48,6 +53,40 @@ def test_paid_invoice_is_skipped():
     results, _, _ = _run()
     assert results["INV-005"].terminal_state is TerminalState.SKIPPED
     assert results["INV-014"].terminal_state is TerminalState.SKIPPED  # consumer + paid
+
+
+def _held_invoice() -> Invoice:
+    # Touched today - the cooldown check (policy.py's TOO_SOON_DAYS) holds this
+    # regardless of anything else, same shape as a just-approved-and-sent invoice.
+    today = date.today()
+    return Invoice(
+        invoice_id="INV-HOLD", tenant_id="t_demo", source=Source.CSV, source_ref="x",
+        amount_due=Decimal("500.00"), currency="USD",
+        issue_date=today - timedelta(days=40), due_date=today - timedelta(days=20),
+        status=InvoiceStatus.OPEN, debtor_name="Acme", debtor_email="a@b.co",
+        is_b2b=True, late_fee_allowed=True, as_of_date=today,
+        prior_contacts=[
+            PriorContact(occurred_on=today, direction=ContactDirection.OUTBOUND, channel=Channel.EMAIL)
+        ],
+    )
+
+
+def test_always_escalate_guardrail_overrides_a_natural_hold():
+    # Regression: an ALWAYS_ESCALATE compliance guardrail used to be silently
+    # defeated whenever strategy decided HOLD (the cooldown check returns before
+    # ever reaching the gate, where guardrail_violations is normally checked) -
+    # exactly the scenario right after an invoice is sent and an operator flags it.
+    inv = _held_invoice()
+    plain = Orchestrator(log=ExecutionLog())
+    assert plain.run_one(inv).terminal_state is TerminalState.HELD
+
+    store = RuleStore()
+    store.add(OperatorRule(
+        scope=Scope.COMPLIANCE, directive=Directive.ALWAYS_ESCALATE,
+        criteria={"debtor_name": "Acme"}, tenant_id="t_demo",
+    ))
+    guarded = Orchestrator(log=ExecutionLog(), rules_store=store)
+    assert guarded.run_one(inv).terminal_state is TerminalState.ESCALATED
 
 
 def test_first_contact_is_held_for_approval_not_sent():

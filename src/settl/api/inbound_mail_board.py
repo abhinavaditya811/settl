@@ -14,6 +14,7 @@ piece that genuinely needs a real subprocess+credentials (see mcp_client.py).
 
 from __future__ import annotations
 
+import os
 import re
 from email.utils import parseaddr
 from typing import Callable
@@ -39,6 +40,40 @@ Send = Callable[..., str | None]
 # the negotiation lane, not the generic inbound classifier (SCHEMA.md §8).
 _NEGOTIABLE_PLAN_STATUSES = frozenset({PaymentPlanStatus.PROPOSED, PaymentPlanStatus.ACTIVE})
 
+# Subject prefixes of Settl's OWN operator-facing notifications (notify.py). These
+# land in the operator's own inbox (self-sent), so without skipping them the poller
+# would correlate "[Settl] Recovered - INV-013" to its invoice and auto-reply to
+# its own notification - a self-loop, distinct from a real debtor reply which is
+# always "Re: [Settl] Invoice reminder - ...".
+_SELF_AUTHORED_SUBJECT_PREFIXES = ("[Settl] Recovered", "[Settl] Needs review")
+
+
+def _is_self_authored(subject: str) -> bool:
+    s = subject.strip()
+    if s.lower().startswith("re:"):
+        s = s[3:].strip()
+    return s.startswith(_SELF_AUTHORED_SUBJECT_PREFIXES)
+
+
+def _operator_addresses(tenant_id: str) -> frozenset[str]:
+    """Lowercased emails that are the operator/vendor's OWN sending identity.
+    ALL Settl-authored mail (debtor outreach AND operator notifications) comes
+    from one of these, never a debtor - so mail whose From matches is skipped.
+    This is the robust version of the subject check above: outreach and a debtor
+    reply share the same subject ("[Settl] Invoice reminder - ..."), so subject
+    alone can't tell them apart, but the From address can. Without it, the poller
+    re-ingests our own chase email (which lands in the debtor mailbox we poll in
+    a single-account test, and generally in any thread) as if it were a reply,
+    classifies it, and drafts another - the spurious pass seen in traces."""
+    addrs: set[str] = set()
+    smtp_user = os.environ.get("SETTL_SMTP_USER")
+    if smtp_user:
+        addrs.add(smtp_user.lower())
+    _, own = parseaddr(config_for(tenant_id).identity.from_address or "")
+    if own:
+        addrs.add(own.lower())
+    return frozenset(addrs)
+
 
 def invoice_id_from_subject(subject: str) -> str | None:
     """The fallback correlation per SCHEMA.md §7: outbound subjects are
@@ -49,9 +84,31 @@ def invoice_id_from_subject(subject: str) -> str | None:
 
 
 class InboundMailBoard:
-    def __init__(self, *, orchestrator: Orchestrator, log: ExecutionLog | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        orchestrator: Orchestrator,
+        log: ExecutionLog | None = None,
+        live_reply_enabled: bool = False,
+        demo_tenant_ids: frozenset[str] = frozenset(),
+    ) -> None:
         self._orchestrator = orchestrator
         self._log = log
+        # The orchestrator's sender only runs the GATE for an inbound reply; the
+        # actual threaded Gmail send happens in _send_and_record via the real Gmail
+        # API, so THAT is the real control point - not the orchestrator's mock/live
+        # sender. Off by default: a gate-cleared reply is drafted and shown on the
+        # board, but never actually emailed unless inbound live-send is armed
+        # (SETTL_LIVE_SEND_INBOUND_REPLY=1) and the invoice isn't a demo tenant.
+        self._live_reply_enabled = live_reply_enabled
+        self._demo_tenant_ids = demo_tenant_ids
+
+    def _reply_send_armed(self, invoice: Invoice) -> bool:
+        if not self._live_reply_enabled:
+            return False
+        if invoice.tenant_id in self._demo_tenant_ids and os.environ.get("SETTL_LIVE_SEND_DEMO") != "1":
+            return False
+        return True
 
     # -- correlation ------------------------------------------------------
 
@@ -153,9 +210,13 @@ class InboundMailBoard:
             self._log_skip(f"poll failed for {tenant_id}: {exc}")
             return []
 
+        own_addresses = _operator_addresses(tenant_id)
         changed: list[tuple[str, PipelineResult]] = []
         for raw in raw_messages:
             msg = _message_from_dict(raw)
+            _, sender_email = parseaddr(msg.from_address)
+            if sender_email.lower() in own_addresses or _is_self_authored(msg.subject):
+                continue  # our own outreach/notification, never a debtor reply
             if self.already_processed(msg):
                 continue
             invoice_id = self.correlate(msg, invoices)
@@ -193,6 +254,16 @@ class InboundMailBoard:
     def _send_and_record(
         self, tenant_id, invoice: Invoice, msg: GmailMessage, body: str, send: Send
     ) -> Invoice:
+        if not self._reply_send_armed(invoice):
+            # Gate-cleared, but inbound live-send isn't armed for this invoice (or
+            # it's a demo tenant) - draft is on the board, no real Gmail reply goes
+            # out. This is THE control point: the orchestrator's mock/live sender
+            # only ran the gate; the real threaded send is here.
+            self._log_skip(
+                f"{invoice.invoice_id}: gate-cleared reply NOT sent "
+                "(inbound live-send off or demo tenant)"
+            )
+            return invoice
         # Gmail sends as the authenticated (tenant's) account regardless of the
         # MIME From header, but the header still needs a real value for display
         # - the vendor's own identity, never the debtor's address.
