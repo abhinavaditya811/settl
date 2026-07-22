@@ -7,7 +7,7 @@ they project the canonical ``Invoice`` + ``PipelineResult`` the engine produced.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StepView(BaseModel):
@@ -206,3 +206,13 @@ class PaymentPlanDecisionResponse(BaseModel):
     offer_count: int
     terminal_state: str
     detail: str
+
+
+class PaymentPlanTemplateView(BaseModel):
+    installments: int = Field(ge=1, le=24)  # a sane UI bound; the engine itself has none
+    period_days: int = Field(ge=1, le=365)
+    label: str = ""
+
+
+class PaymentPlanTemplatesBody(BaseModel):
+    templates: list[PaymentPlanTemplateView]

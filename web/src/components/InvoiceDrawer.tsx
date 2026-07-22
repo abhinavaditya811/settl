@@ -10,6 +10,7 @@ import { StateBadge, StatusTag } from "./Badge";
 import DecisionTrace from "./DecisionTrace";
 import FlagForm from "./FlagForm";
 import GuardrailsPanel from "./GuardrailsPanel";
+import PaymentPlanPanel from "./PaymentPlanPanel";
 
 const fadeIn = keyframes`from { opacity: 0; } to { opacity: 1; }`;
 const slideIn = keyframes`from { transform: translateX(24px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; }`;
@@ -253,6 +254,8 @@ export default function InvoiceDrawer({
               ) : (
                 <Muted>No message was drafted for this invoice.</Muted>
               )}
+
+              <PaymentPlanPanel invoiceId={detail.invoice_id} steps={detail.steps} />
 
               <Label>Decision trace</Label>
               <DecisionTrace trace={trace} />

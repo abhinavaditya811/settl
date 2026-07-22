@@ -8,6 +8,7 @@
 import { useSession } from "next-auth/react";
 import styled from "styled-components";
 import GmailConnect from "@/components/GmailConnect";
+import PaymentPlanTemplates from "@/components/profile/PaymentPlanTemplates";
 
 const Title = styled.h1`
   font-size: 22px;
@@ -86,6 +87,7 @@ export default function ProfileView() {
           <GmailConnect />
         </Row>
       </Card>
+      <PaymentPlanTemplates />
     </>
   );
 }

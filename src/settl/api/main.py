@@ -16,10 +16,12 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /invoices/{id}/payment-plan          the offered/active PaymentPlan, if any
     POST /invoices/{id}/payment-plan/offer    offer the vendor's configured template
     POST /invoices/{id}/payment-plan/decide   vendor approve/reject (SCHEMA.md §8)
+    GET/PUT /payment-plan-templates/mine      the vendor's own templates (api/tenant_config_routes.py)
     GET  /oauth/google/authorize    redirect to Google's consent screen (api/oauth_routes.py)
     GET  /oauth/google/callback     Google's redirect back after consent
-    POST /check-payments            poll Stripe + auto-reconcile paid links
+    POST /check-payments            poll Stripe + auto-reconcile paid links (api/poll_routes.py)
     POST /check-inbound-mail        poll one tenant's Gmail for new replies (SCHEMA.md §7)
+    POST /check-inbound-mail/mine   same, scoped to the session (no tenant_id needed)
     POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
     POST /retell/webhook            Retell end-of-call events → call artifact + opt-out
     POST /refresh                   re-run the board over the dataset
@@ -41,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from settl.adapters.csv_adapter import CsvFormatError
 from settl.adapters.manual_entry import ManualInvoiceInput
-from settl.api import inbound_poll_scheduler
+from settl.api import inbound_poll_scheduler, poll_routes
 from settl.api.identity import BoardScope, board_scope, require_mine_scope
 from settl.api.schemas import (
     ActivityEntry,
@@ -49,8 +51,6 @@ from settl.api.schemas import (
     ApproveResponse,
     BoardResponse,
     BoardSummary,
-    CheckInboundMailResponse,
-    CheckPaymentsResponse,
     CsvImportBody,
     CsvImportResponse,
     FlagRequest,
@@ -71,6 +71,7 @@ from settl.api.schemas import (
     WebhookAck,
 )
 from settl.api.oauth_routes import router as oauth_router
+from settl.api.tenant_config_routes import router as tenant_config_router
 from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
@@ -93,6 +94,8 @@ voice_do_not_call = DoNotCallRegistry()
 # lifespan runs the scheduled inbound-mail poll (SCHEMA.md §7) as a background task.
 app = FastAPI(title="Settl Engine API", version="0.1.0", lifespan=inbound_poll_scheduler.lifespan_for(state))
 app.include_router(oauth_router)
+app.include_router(poll_routes.build_router(state))
+app.include_router(tenant_config_router)
 
 _origins = os.environ.get("SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
@@ -219,9 +222,9 @@ def approve(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse
 
 @app.post("/invoices/{invoice_id}/flag", response_model=FlagResponse)
 def flag(invoice_id: str, body: FlagRequest) -> FlagResponse:
-    """Operator flags a decision: store a guardrail + re-orchestrate this invoice. The
-    engine decides the outcome (and refuses waiving a non-waivable rule); this route only
-    projects the result - no compliance/strategy logic lives here."""
+    """Operator flags a decision: store a guardrail + re-orchestrate. The engine
+    decides the outcome (and refuses waiving a non-waivable rule); this route only
+    projects the result."""
     out = state.flag_decision(
         invoice_id,
         scope=body.scope,
@@ -291,23 +294,6 @@ def decide_payment_plan_route(invoice_id: str, body: PaymentPlanDecisionBody) ->
 @app.get("/guardrails", response_model=list[GuardrailView])
 def guardrails(scope: BoardScope = Depends(board_scope)) -> list[GuardrailView]:
     return [GuardrailView(**g) for g in state.guardrails(scope.tenant_ids)]
-
-
-@app.post("/check-inbound-mail", response_model=CheckInboundMailResponse)
-def check_inbound_mail(tenant_id: str) -> CheckInboundMailResponse:
-    """Poll one tenant's Gmail for new replies (SCHEMA.md §7). No-op ([]) if
-    that tenant never connected Gmail. Mirrors /check-payments' shape."""
-    changed = state.poll_inbound_mail(tenant_id)
-    inbound_poll_scheduler.record_poll(tenant_id)
-    return CheckInboundMailResponse(changed=changed)
-
-
-@app.post("/check-payments", response_model=CheckPaymentsResponse)
-def check_payments() -> CheckPaymentsResponse:
-    """Poll Stripe for paid links and auto-reconcile (record fee, notify, RECOVERED).
-    No-op when Stripe isn't armed. The dashboard polls this so payment reflects on
-    its own - no manual marking."""
-    return CheckPaymentsResponse(recovered=state.check_payments())
 
 
 @app.post("/stripe/webhook", response_model=WebhookAck)
