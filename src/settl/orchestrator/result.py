@@ -77,3 +77,16 @@ class PipelineResult:
     @property
     def should_requeue(self) -> bool:
         return self.terminal_state in REQUEUE_STATES
+
+    @property
+    def is_unresolved_inbound_escalation(self) -> bool:
+        """A debtor-triggered escalation (dispute/opt-out/payment-plan request,
+        pipeline.py::handle_inbound) still pending human review. A routine batch
+        re-run (BoardState.refresh, incl. every restart) recomputes strategy/gate
+        from scratch and has no memory of the reply - without this check it
+        silently overwrites the escalation with an ordinary cooldown "too soon to
+        re-contact" hold, erasing the only signal an operator needed to act
+        (observed live: a payment-plan request vanished after a routine restart)."""
+        return self.terminal_state is TerminalState.ESCALATED and any(
+            s.agent == "inbound" for s in self.steps
+        )

@@ -10,3 +10,6 @@ settl.api.main, regardless of what's in .env or the shell.
 import os
 
 os.environ["SETTL_USE_SUPABASE"] = "0"
+# Same reasoning: a local .env may set SETTL_USE_GROQ=1 for live inbound
+# classification - force it off so no test makes a real Groq call.
+os.environ["SETTL_USE_GROQ"] = "0"

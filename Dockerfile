@@ -16,11 +16,14 @@ WORKDIR /app
 
 # Third-party deps only (matches pyproject base + [api] extras). We do not
 # install the local package, so settl is imported from /app/src.
+# cryptography is required at import time (settl.security.token_crypto uses
+# cryptography.fernet at module load, pulled in via oauth_routes -> oauth_google).
 RUN pip install --no-cache-dir \
     "pydantic>=2.6" \
     "fastapi>=0.110" \
     "uvicorn[standard]>=0.29" \
-    "psycopg[binary]>=3.1"
+    "psycopg[binary]>=3.1" \
+    "cryptography>=42.0"
 
 COPY src ./src
 

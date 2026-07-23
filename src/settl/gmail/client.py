@@ -79,10 +79,16 @@ class GmailClient:
             return None
 
     def list_new_threads(
-        self, *, query: str = "is:unread", max_results: int = 20
+        self, *, query: str = "in:inbox newer_than:30d", max_results: int = 20
     ) -> list[GmailMessage]:
-        """New inbound messages matching ``query`` (default: unread). Fail-safe
-        - [] on any error (no key, expired refresh token, network failure)."""
+        """Inbound messages matching ``query`` (default: inbox only, last 30
+        days). ``in:inbox`` matters - Settl's own auto-reply lands in this same
+        account's Sent folder, and without that restriction the next poll would
+        find it, misread it as a fresh debtor message, and reply to itself
+        (a real, observed mail loop). Not ``is:unread`` either - a message a
+        human already read in Gmail must still be pollable; the caller's own
+        message-id dedup is the real idempotency guard. Fail-safe - [] on any
+        error (no key, expired refresh token, network failure)."""
         listing = self._request(
             "get", "/users/me/messages", params={"q": query, "maxResults": max_results}
         )

@@ -4,11 +4,12 @@
 contingent real-email path for a self-test. Both inherit the compliance refusal
 from ``GatedSender`` (DESIGN §5)."""
 
-from settl.sending.base import GatedSender, SendOutcome, Sender
+from settl.sending.base import DeliveryFailed, GatedSender, SendOutcome, Sender
 from settl.sending.email_sender import GmailSmtpSender, MissingCredentials
 from settl.sending.mock_sender import MockSender
 
 __all__ = [
+    "DeliveryFailed",
     "GatedSender",
     "GmailSmtpSender",
     "MissingCredentials",

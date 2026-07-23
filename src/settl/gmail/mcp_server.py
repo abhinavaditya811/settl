@@ -38,7 +38,7 @@ def _serialize_message(msg: GmailMessage) -> dict[str, Any]:
 
 
 def _read_threads(
-    client: GmailClient, *, query: str = "is:unread", max_results: int = 20
+    client: GmailClient, *, query: str = "in:inbox newer_than:30d", max_results: int = 20
 ) -> list[dict[str, Any]]:
     return [
         _serialize_message(m)
@@ -76,8 +76,15 @@ def build_server(client: GmailClient):
     mcp = FastMCP("settl-gmail")
 
     @mcp.tool()
-    def read_threads(query: str = "is:unread", max_results: int = 20) -> list[dict[str, Any]]:
-        """New inbound Gmail messages matching ``query`` (default: unread)."""
+    def read_threads(
+        query: str = "in:inbox newer_than:30d", max_results: int = 20
+    ) -> list[dict[str, Any]]:
+        """Inbound Gmail messages matching ``query`` (default: inbox only, last
+        30 days - see GmailClient.list_new_threads for why ``in:inbox`` matters).
+        Not ``is:unread`` - a vendor who reads a reply in their own Gmail client
+        before the next poll would otherwise make it invisible here;
+        ``already_processed()`` (Supabase message-id dedup) is what actually
+        guards against reprocessing, not the read/unread flag."""
         return _read_threads(client, query=query, max_results=max_results)
 
     @mcp.tool()

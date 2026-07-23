@@ -14,6 +14,7 @@ import { getDetail, getTrace } from "@/lib/api";
 import { formatMoney, overdueLabel } from "@/lib/format";
 import { EmptyState } from "@/components/ui";
 import DecisionTrace from "@/components/DecisionTrace";
+import PaymentPlanPanel from "@/components/PaymentPlanPanel";
 import UploadCsvModal from "@/components/zero/UploadCsvModal";
 import ManualEntryModal from "@/components/zero/ManualEntryModal";
 
@@ -268,6 +269,7 @@ export default function InvoicesView() {
                   <Msg>{detail.message_preview}</Msg>
                 </>
               )}
+              {detail && <PaymentPlanPanel invoiceId={sel.invoice_id} steps={detail.steps} />}
               <Cap>Decision trace</Cap>
               {trace.length === 0 ? (
                 <div style={{ fontSize: 13, color: theme.textMuted }}>Loading…</div>

@@ -67,6 +67,59 @@ export interface CheckPaymentsResponse {
   recovered: string[]; // invoice ids auto-reconciled to RECOVERED on this poll
 }
 
+export interface CheckInboundMailResponse {
+  changed: string[]; // invoice ids whose board state moved on this poll
+}
+
+export interface InstallmentView {
+  index: number;
+  amount: string;
+  due_date: string;
+  payment_link: string | null;
+  paid_at: string | null;
+}
+
+export type PaymentPlanStatus = "proposed" | "approved" | "rejected" | "active" | "broken" | "completed";
+
+export type NegotiationOutcome = "accepted" | "wants_different_terms";
+
+export interface PaymentPlanView {
+  invoice_id: string;
+  status: PaymentPlanStatus;
+  installments: InstallmentView[];
+  source: "template" | "negotiated";
+  template_ref: string | null;
+  offer_count: number;
+  can_reoffer: boolean;
+  // The debtor's response to the CURRENT offer, if any - cleared on a fresh
+  // offer/reoffer. Surfaced so the vendor sees it before deciding.
+  negotiation_outcome: NegotiationOutcome | null;
+  requested_terms: string | null;
+}
+
+export interface PaymentPlanDecisionResponse {
+  invoice_id: string;
+  plan_status: string;
+  offer_count: number;
+  terminal_state: string;
+  detail: string;
+}
+
+// A vendor-preapproved installment option (Profile tab settings). No platform
+// ceiling on installments/period_days at the engine level - eligibility is
+// enforced at the compliance gate, not here (see PaymentPlanTemplate's docstring).
+export interface PaymentPlanTemplateInput {
+  installments: number;
+  period_days: number;
+  label: string;
+}
+
+// Whether an explicit vendor approve/reject may confirm a payment plan to the
+// debtor (SCHEMA.md §8) - asked at signup, changeable in the Profile tab.
+export interface PaymentPlanAutonomy {
+  enabled: boolean;
+}
+
 // Human-in-the-loop: flag a decision → guardrail + re-orchestrate.
 export type FlagScope = "strategy" | "compliance";
 export type FlagDirective =

@@ -50,6 +50,19 @@ def _repeat_payer(invoice_id="INV-005", tenant_id="t_demo") -> Invoice:
     )
 
 
+def _new_debtor(invoice_id="INV-777", tenant_id="t_demo") -> Invoice:
+    today = date.today()
+    return Invoice(
+        invoice_id=invoice_id, tenant_id=tenant_id, source=Source.STRIPE, source_ref="x",
+        amount_due=Decimal("500.00"), currency="USD",
+        issue_date=today - timedelta(days=50), due_date=today - timedelta(days=20),
+        status=InvoiceStatus.OPEN, debtor_name="NewCo", debtor_email="ap@newco.test",
+        is_b2b=True, late_fee_allowed=True, as_of_date=today,
+        payment_link="https://buy.stripe.com/test_y",
+        prior_contacts=[],  # first contact - no prior outbound touches
+    )
+
+
 def _msg(**overrides) -> GmailMessage:
     defaults = dict(
         message_id="<reply-001@gmail>", thread_id="t1", in_reply_to="<orig-001@settl>",
@@ -61,8 +74,13 @@ def _msg(**overrides) -> GmailMessage:
     return GmailMessage(**defaults)
 
 
-def _board() -> imb.InboundMailBoard:
-    return imb.InboundMailBoard(orchestrator=Orchestrator())
+def _board(*, live_reply_enabled: bool = True, plan_board=None) -> imb.InboundMailBoard:
+    # Default True here so the existing reply-path tests still exercise the real
+    # send; production defaults to False (a reply is drafted + shown, never
+    # auto-emailed unless SETTL_LIVE_SEND_INBOUND_REPLY is armed).
+    return imb.InboundMailBoard(
+        orchestrator=Orchestrator(), live_reply_enabled=live_reply_enabled, plan_board=plan_board
+    )
 
 
 # --- invoice_id_from_subject -----------------------------------------------------
@@ -125,7 +143,7 @@ def test_already_processed_true_when_message_id_already_recorded(monkeypatch):
 def test_handle_message_routes_to_orchestrator_when_no_plan_in_flight():
     inv = _repeat_payer()
     board = _board()
-    result = board.handle_message(inv, _msg(), plan=None)
+    result, _ = board.handle_message(inv, _msg(), plan=None)
     # A benign reply from a repeat payer (is_new_debtor False) auto-sends,
     # same as test_orchestrator.py's handle_inbound coverage.
     assert result.terminal_state is TerminalState.SENT
@@ -139,20 +157,55 @@ def test_handle_message_routes_to_negotiation_when_plan_is_proposed():
         installments=(Installment(index=0, amount=Decimal("300"), due_date=date.today()),),
     )
     board = _board()
-    result = board.handle_message(inv, _msg(body_text="that works for me"), plan=plan)
+    result, _ = board.handle_message(inv, _msg(body_text="that works for me"), plan=plan)
     # Never auto-sends - the vendor's existing approve/reject flow still owns
     # anything reaching the debtor.
     assert result.terminal_state is TerminalState.HELD
     assert result.message is None
 
 
+def test_handle_message_persists_negotiation_onto_the_plan_board():
+    # Regression: negotiation used to be classified + logged but never SAVED onto
+    # the PaymentPlan itself, so the vendor's UI had no way to see what the debtor
+    # said before approving - a vendor could blindly approve terms the debtor had
+    # already asked to change.
+    inv = _repeat_payer()
+    plan = PaymentPlan(
+        id="pp-1", tenant_id="t_demo", invoice_id="INV-005", status=PaymentPlanStatus.PROPOSED,
+        installments=(Installment(index=0, amount=Decimal("300"), due_date=date.today()),),
+    )
+    captured = {}
+
+    class _FakePlanBoard:
+        def record_negotiation(self, invoice_id, outcome, requested_terms):
+            captured["args"] = (invoice_id, outcome, requested_terms)
+
+    board = _board(plan_board=_FakePlanBoard())
+    board.handle_message(inv, _msg(body_text="actually can we do 6 months instead?"), plan=plan)
+    assert captured["args"] == ("INV-005", "wants_different_terms", "actually can we do 6 months instead?")
+
+
 def test_handle_message_ignores_a_completed_plan():
     inv = _repeat_payer()
     plan = PaymentPlan(id="pp-1", tenant_id="t_demo", invoice_id="INV-005", status=PaymentPlanStatus.COMPLETED)
     board = _board()
-    result = board.handle_message(inv, _msg(), plan=plan)
+    result, _ = board.handle_message(inv, _msg(), plan=plan)
     # A completed plan is no longer "in flight" - back to the generic lanes.
     assert result.terminal_state is TerminalState.SENT
+
+
+def test_handle_message_returns_invoice_with_the_new_inbound_contact_appended(monkeypatch):
+    # Regression: poll() must see the appended contact on the NEXT message, or
+    # rule_contact_frequency evaluates every reply against a stale snapshot
+    # forever and can never trip - the actual cause of an observed mail loop.
+    monkeypatch.setattr(imb.db, "supabase_enabled", lambda: True)
+    monkeypatch.setattr(imb.db, "write_contact", lambda *a, **k: None)
+    inv = _repeat_payer()
+    starting = len(inv.prior_contacts)
+    board = _board()
+    _, updated = board.handle_message(inv, _msg(), plan=None)
+    assert len(updated.prior_contacts) == starting + 1
+    assert updated.prior_contacts[-1].direction is ContactDirection.INBOUND
 
 
 # --- poll ----------------------------------------------------------------------
@@ -187,6 +240,64 @@ def test_poll_correlates_and_processes_new_messages():
     assert sent["to"] == "ap@acme.test"  # parsed out of "Acme AP <ap@acme.test>"
 
 
+def test_poll_does_not_really_send_when_inbound_live_is_off():
+    # Regression: the orchestrator's inbound sender only runs the GATE - the real
+    # threaded Gmail reply is _send_and_record's `send`. With inbound live-send off
+    # (production default) a benign reply is drafted + shown on the board, but the
+    # real Gmail send must NOT fire. Previously it always did, causing a live loop.
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board(live_reply_enabled=False)
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg())],
+        send=lambda *a, **k: send_calls.append((a, k)) or "<x@gmail>",
+    )
+    assert send_calls == []  # the real Gmail reply never fired
+    assert changed[0][1].terminal_state is TerminalState.SENT  # gate still cleared it
+
+
+def test_poll_skips_settl_own_notification_emails():
+    # Regression: "[Settl] Recovered - INV-005" is Settl's OWN operator notification
+    # (notify.py), self-sent to the operator's inbox. Its subject correlates to the
+    # invoice, so the poller used to treat it as a debtor reply and auto-reply to
+    # its own notification - a self-loop. It must be skipped outright.
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board()
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg(subject="[Settl] Recovered - INV-005"))],
+        send=lambda *a, **k: send_calls.append(1) or "<x@gmail>",
+    )
+    assert changed == []
+    assert send_calls == []
+
+
+def test_poll_skips_our_own_outreach_read_back_as_inbound(monkeypatch):
+    # Regression: our own chase "[Settl] Invoice reminder - INV-005" shares its
+    # subject with a debtor's reply, so subject alone can't tell them apart - but
+    # the From address can. Our outreach is FROM the operator (SETTL_SMTP_USER);
+    # a debtor reply is not. Without the From skip the poller re-ingested our own
+    # chase as a 'reply', classified it, and drafted another (a spurious pass).
+    from types import SimpleNamespace
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
+    monkeypatch.setattr(imb, "config_for", lambda tid: SimpleNamespace(identity=SimpleNamespace(from_address=None)))
+    inv = _repeat_payer()
+    send_calls = []
+    board = _board()
+    changed = board.poll(
+        "t_demo", {inv.invoice_id: inv}, {},
+        fetch=lambda tenant_id: [_raw(_msg(
+            from_address="Our Company <vendor@ourco.test>",
+            subject="[Settl] Invoice reminder - INV-005",
+        ))],
+        send=lambda *a, **k: send_calls.append(1) or "<x@gmail>",
+    )
+    assert changed == []       # our own outreach, not processed
+    assert send_calls == []    # and certainly no auto-reply to ourselves
+
+
 def test_poll_skips_uncorrelated_messages_without_raising():
     board = _board()
     changed = board.poll(
@@ -202,6 +313,60 @@ def test_poll_is_fail_safe_when_fetch_raises():
         raise RuntimeError("no credentials")
 
     assert board.poll("t_demo", {}, {}, fetch=boom, send=lambda *a, **k: None) == []
+
+
+def test_poll_does_not_replace_a_pending_approval_with_a_new_one():
+    # Regression: a new-debtor invoice sitting AWAITING_APPROVAL (never actioned,
+    # so is_new_debtor is still True) got a SECOND benign reply before the human
+    # approved the first - the poller drafted and held a totally different
+    # message, silently overwriting the pending one in the board's results dict.
+    inv = _new_debtor()
+    invoices = {inv.invoice_id: inv}
+    board = _board()
+    subject = f"Re: [Settl] Invoice reminder - {inv.invoice_id}"
+
+    first = board.poll(
+        "t_demo", invoices, {},
+        fetch=lambda tenant_id: [_raw(_msg(message_id="<reply-1@gmail>", subject=subject))],
+        send=lambda *a, **k: "<sent@gmail>",
+    )
+    assert first[0][1].terminal_state is TerminalState.AWAITING_APPROVAL
+    first_message = first[0][1].message
+    results = {inv.invoice_id: first[0][1]}
+
+    second = board.poll(
+        "t_demo", invoices, {}, results,
+        fetch=lambda tenant_id: [
+            _raw(_msg(message_id="<reply-2@gmail>", body_text="just checking in", subject=subject))
+        ],
+        send=lambda *a, **k: "<sent@gmail>",
+    )
+
+    assert second == []  # suppressed - not reported as a board change
+    assert results[inv.invoice_id].message == first_message  # pending draft untouched
+
+
+def test_poll_stops_auto_replying_once_contact_frequency_limit_trips():
+    # Regression: an observed real mail loop - poll() used to hand rule_contact_
+    # frequency the SAME stale invoice snapshot every cycle (fixed to reuse the
+    # `invoices` dict exactly as BoardState.poll_inbound_mail does across real
+    # poll cycles), so it never saw its own prior auto-replies and never tripped.
+    # FREQUENCY_MAX_TOUCHES defaults to 3 within a 7-day window.
+    inv = _repeat_payer()  # 1 prior contact, but 10 days old - outside the window
+    invoices = {inv.invoice_id: inv}
+    board = _board()
+    terminal_states = []
+    for i in range(5):
+        changed = board.poll(
+            "t_demo", invoices, {},
+            fetch=lambda tenant_id, i=i: [_raw(_msg(message_id=f"<reply-{i}@gmail>"))],
+            send=lambda *a, **k: "<sent@gmail>",
+        )
+        terminal_states.append(changed[0][1].terminal_state)
+
+    assert terminal_states.count(TerminalState.SENT) == 3
+    assert terminal_states[3] is TerminalState.ESCALATED
+    assert terminal_states[4] is TerminalState.ESCALATED
 
 
 def test_poll_does_not_send_for_a_held_negotiation_result():

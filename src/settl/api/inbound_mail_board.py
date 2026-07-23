@@ -14,12 +14,14 @@ piece that genuinely needs a real subprocess+credentials (see mcp_client.py).
 
 from __future__ import annotations
 
+import os
 import re
 from email.utils import parseaddr
 from typing import Callable
 
 from settl.agents.payment_plan.models import PaymentPlan, PaymentPlanStatus
 from settl.agents.payment_plan.negotiate import read_response
+from settl.api.payment_plan_board import PaymentPlanBoard
 from settl.audit.execution_log import ExecutionLog
 from settl.data import config_for
 from settl.data import supabase as db
@@ -39,6 +41,40 @@ Send = Callable[..., str | None]
 # the negotiation lane, not the generic inbound classifier (SCHEMA.md §8).
 _NEGOTIABLE_PLAN_STATUSES = frozenset({PaymentPlanStatus.PROPOSED, PaymentPlanStatus.ACTIVE})
 
+# Subject prefixes of Settl's OWN operator-facing notifications (notify.py). These
+# land in the operator's own inbox (self-sent), so without skipping them the poller
+# would correlate "[Settl] Recovered - INV-013" to its invoice and auto-reply to
+# its own notification - a self-loop, distinct from a real debtor reply which is
+# always "Re: [Settl] Invoice reminder - ...".
+_SELF_AUTHORED_SUBJECT_PREFIXES = ("[Settl] Recovered", "[Settl] Needs review")
+
+
+def _is_self_authored(subject: str) -> bool:
+    s = subject.strip()
+    if s.lower().startswith("re:"):
+        s = s[3:].strip()
+    return s.startswith(_SELF_AUTHORED_SUBJECT_PREFIXES)
+
+
+def _operator_addresses(tenant_id: str) -> frozenset[str]:
+    """Lowercased emails that are the operator/vendor's OWN sending identity.
+    ALL Settl-authored mail (debtor outreach AND operator notifications) comes
+    from one of these, never a debtor - so mail whose From matches is skipped.
+    This is the robust version of the subject check above: outreach and a debtor
+    reply share the same subject ("[Settl] Invoice reminder - ..."), so subject
+    alone can't tell them apart, but the From address can. Without it, the poller
+    re-ingests our own chase email (which lands in the debtor mailbox we poll in
+    a single-account test, and generally in any thread) as if it were a reply,
+    classifies it, and drafts another - the spurious pass seen in traces."""
+    addrs: set[str] = set()
+    smtp_user = os.environ.get("SETTL_SMTP_USER")
+    if smtp_user:
+        addrs.add(smtp_user.lower())
+    _, own = parseaddr(config_for(tenant_id).identity.from_address or "")
+    if own:
+        addrs.add(own.lower())
+    return frozenset(addrs)
+
 
 def invoice_id_from_subject(subject: str) -> str | None:
     """The fallback correlation per SCHEMA.md §7: outbound subjects are
@@ -49,9 +85,37 @@ def invoice_id_from_subject(subject: str) -> str | None:
 
 
 class InboundMailBoard:
-    def __init__(self, *, orchestrator: Orchestrator, log: ExecutionLog | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        orchestrator: Orchestrator,
+        log: ExecutionLog | None = None,
+        live_reply_enabled: bool = False,
+        demo_tenant_ids: frozenset[str] = frozenset(),
+        plan_board: PaymentPlanBoard | None = None,
+    ) -> None:
         self._orchestrator = orchestrator
         self._log = log
+        # The orchestrator's sender only runs the GATE for an inbound reply; the
+        # actual threaded Gmail send happens in _send_and_record via the real Gmail
+        # API, so THAT is the real control point - not the orchestrator's mock/live
+        # sender. Off by default: a gate-cleared reply is drafted and shown on the
+        # board, but never actually emailed unless inbound live-send is armed
+        # (SETTL_LIVE_SEND_INBOUND_REPLY=1) and the invoice isn't a demo tenant.
+        self._live_reply_enabled = live_reply_enabled
+        self._demo_tenant_ids = demo_tenant_ids
+        # Persists a negotiation outcome onto the PaymentPlan itself (see
+        # _handle_plan_negotiation) so the vendor sees it before deciding, not just
+        # in the execution log. None in tests that don't need it - negotiation is
+        # then classified/logged but not persisted onto a plan record.
+        self._plan_board = plan_board
+
+    def _reply_send_armed(self, invoice: Invoice) -> bool:
+        if not self._live_reply_enabled:
+            return False
+        if invoice.tenant_id in self._demo_tenant_ids and os.environ.get("SETTL_LIVE_SEND_DEMO") != "1":
+            return False
+        return True
 
     # -- correlation ------------------------------------------------------
 
@@ -79,23 +143,36 @@ class InboundMailBoard:
 
     def handle_message(
         self, invoice: Invoice, msg: GmailMessage, plan: PaymentPlan | None
-    ) -> PipelineResult:
+    ) -> tuple[PipelineResult, Invoice]:
+        """Returns the pipeline result AND the invoice with this message's
+        contact appended - the caller (poll()) must write it back into its
+        ``invoices`` dict, or rule_contact_frequency evaluates every future
+        message on a stale, ever-shrinking-relative touch count (a real
+        feedback loop: an auto-reply that never counts against itself)."""
         if plan is not None and plan.status in _NEGOTIABLE_PLAN_STATUSES:
             return self._handle_plan_negotiation(invoice, msg, plan)
         result = self._orchestrator.handle_inbound(invoice, msg.body_text)
         classification = next(
             (s.decision for s in result.steps if s.agent == "inbound_classifier"), None
         )
-        self._write_inbound_contact(invoice, msg, classification=classification)
-        return result
+        invoice = self._write_inbound_contact(invoice, msg, classification=classification)
+        return result, invoice
 
     def _handle_plan_negotiation(
         self, invoice: Invoice, msg: GmailMessage, plan: PaymentPlan
-    ) -> PipelineResult:
+    ) -> tuple[PipelineResult, Invoice]:
         negotiation = read_response(msg.body_text)
-        self._write_inbound_contact(
+        invoice = self._write_inbound_contact(
             invoice, msg, classification=f"payment_plan_{negotiation.outcome.value}"
         )
+        # Persist onto the plan itself - not just the log - so the vendor sees what
+        # the debtor said BEFORE deciding (an observed gap: a vendor could approve
+        # terms the debtor had already said they didn't want, since the UI only
+        # ever showed the original offer with no visibility into the reply).
+        if self._plan_board is not None:
+            self._plan_board.record_negotiation(
+                invoice.invoice_id, negotiation.outcome.value, negotiation.requested_terms
+            )
         if self._log is not None:
             self._log.record(
                 invoice_id=invoice.invoice_id, agent="payment_plan_negotiate",
@@ -104,24 +181,28 @@ class InboundMailBoard:
             )
         # Confirms nothing itself - the vendor's existing approve/reject action
         # (Phase 4, unchanged) is still the only path that ever sends anything.
-        return PipelineResult(
+        result = PipelineResult(
             invoice.invoice_id, TerminalState.HELD,
             steps=[PipelineStep("payment_plan_negotiate", negotiation.outcome.value, negotiation.reasoning)],
             detail="Debtor responded to the payment-plan offer - awaiting vendor decision.",
         )
+        return result, invoice
 
     def _write_inbound_contact(
         self, invoice: Invoice, msg: GmailMessage, *, classification: str | None
-    ) -> None:
-        if not db.supabase_enabled():
-            return
+    ) -> Invoice:
+        # In-memory history updates unconditionally - it's what keeps
+        # rule_contact_frequency correct across poll cycles in THIS process,
+        # independent of whether Supabase is armed to persist it durably too.
         contact = PriorContact(
             occurred_on=msg.occurred_at.date(), direction=ContactDirection.INBOUND,
             channel=Channel.EMAIL, summary=msg.body_text[:500],
             provider_message_id=msg.message_id, in_reply_to=msg.in_reply_to,
             thread_ref=msg.thread_id, classification=classification,
         )
-        db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        if db.supabase_enabled():
+            db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        return invoice.model_copy(update={"prior_contacts": [*invoice.prior_contacts, contact]})
 
     # -- poll ---------------------------------------------------------------
 
@@ -130,21 +211,27 @@ class InboundMailBoard:
         tenant_id: str,
         invoices: dict[str, Invoice],
         plans: dict[str, PaymentPlan],
+        results: dict[str, PipelineResult] | None = None,
         *,
         fetch: Fetch | None = None,
         send: Send | None = None,
     ) -> list[tuple[str, PipelineResult]]:
         fetch = fetch or _default_fetch
         send = send or _default_send
+        results = results or {}
         try:
             raw_messages = fetch(tenant_id)
         except Exception as exc:
             self._log_skip(f"poll failed for {tenant_id}: {exc}")
             return []
 
+        own_addresses = _operator_addresses(tenant_id)
         changed: list[tuple[str, PipelineResult]] = []
         for raw in raw_messages:
             msg = _message_from_dict(raw)
+            _, sender_email = parseaddr(msg.from_address)
+            if sender_email.lower() in own_addresses or _is_self_authored(msg.subject):
+                continue  # our own outreach/notification, never a debtor reply
             if self.already_processed(msg):
                 continue
             invoice_id = self.correlate(msg, invoices)
@@ -153,13 +240,45 @@ class InboundMailBoard:
                 continue
 
             invoice = invoices[invoice_id]
-            result = self.handle_message(invoice, msg, plans.get(invoice_id))
+            result, invoice = self.handle_message(invoice, msg, plans.get(invoice_id))
+            invoices[invoice_id] = invoice  # keep in-memory history current for the
+                                             # next message's rule_contact_frequency check,
+                                             # regardless of whether the board result below
+                                             # ends up suppressed
+            current = results.get(invoice_id)
+            if (
+                result.terminal_state is TerminalState.AWAITING_APPROVAL
+                and current is not None
+                and current.terminal_state is TerminalState.AWAITING_APPROVAL
+            ):
+                # A draft is already sitting there un-actioned - don't silently swap
+                # it for an unrelated one just because a benign reply came in. Any
+                # more urgent lane (dispute/opt-out/payment-plan) still produces
+                # ESCALATED here, never AWAITING_APPROVAL, so it's never suppressed.
+                self._log_skip(
+                    f"{invoice_id}: reply noted, but a draft is already awaiting "
+                    "approval - not replacing it with a new one"
+                )
+                continue
             if result.terminal_state is TerminalState.SENT and result.message:
-                self._send_and_record(tenant_id, invoice, msg, result.message, send)
+                invoice = self._send_and_record(tenant_id, invoice, msg, result.message, send)
+                invoices[invoice_id] = invoice
             changed.append((invoice_id, result))
         return changed
 
-    def _send_and_record(self, tenant_id, invoice: Invoice, msg: GmailMessage, body: str, send: Send) -> None:
+    def _send_and_record(
+        self, tenant_id, invoice: Invoice, msg: GmailMessage, body: str, send: Send
+    ) -> Invoice:
+        if not self._reply_send_armed(invoice):
+            # Gate-cleared, but inbound live-send isn't armed for this invoice (or
+            # it's a demo tenant) - draft is on the board, no real Gmail reply goes
+            # out. This is THE control point: the orchestrator's mock/live sender
+            # only ran the gate; the real threaded send is here.
+            self._log_skip(
+                f"{invoice.invoice_id}: gate-cleared reply NOT sent "
+                "(inbound live-send off or demo tenant)"
+            )
+            return invoice
         # Gmail sends as the authenticated (tenant's) account regardless of the
         # MIME From header, but the header still needs a real value for display
         # - the vendor's own identity, never the debtor's address.
@@ -170,16 +289,19 @@ class InboundMailBoard:
             to=reply_to or msg.from_address, from_address=from_address,
             subject=msg.subject, body_text=body,
         )
-        if sent_message_id and db.supabase_enabled():
-            db.write_contact(
-                invoice.tenant_id, invoice.invoice_id,
-                PriorContact(
-                    occurred_on=msg.occurred_at.date(), direction=ContactDirection.OUTBOUND,
-                    channel=Channel.EMAIL, summary=body[:500],
-                    provider_message_id=sent_message_id, in_reply_to=msg.message_id,
-                    thread_ref=msg.thread_id,
-                ),
-            )
+        if not sent_message_id:
+            return invoice
+        # In-memory history updates unconditionally, same reasoning as
+        # _write_inbound_contact - see its comment.
+        contact = PriorContact(
+            occurred_on=msg.occurred_at.date(), direction=ContactDirection.OUTBOUND,
+            channel=Channel.EMAIL, summary=body[:500],
+            provider_message_id=sent_message_id, in_reply_to=msg.message_id,
+            thread_ref=msg.thread_id,
+        )
+        if db.supabase_enabled():
+            db.write_contact(invoice.tenant_id, invoice.invoice_id, contact)
+        return invoice.model_copy(update={"prior_contacts": [*invoice.prior_contacts, contact]})
 
     def _log_skip(self, reason: str) -> None:
         if self._log is not None:

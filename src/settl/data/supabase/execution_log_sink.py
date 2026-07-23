@@ -27,10 +27,42 @@ from typing import Callable, TYPE_CHECKING
 
 import psycopg
 
-from settl.data.supabase.connection import open_connection, to_jsonb
+from settl.data.supabase.connection import connect, open_connection, to_jsonb
 
 if TYPE_CHECKING:
     from settl.audit.execution_log import LogEntry
+
+_SELECT_SQL = """
+    select agent, decision, reasoning, details, occurred_at
+    from execution_log
+    where tenant_id = %(tenant_id)s and invoice_id = %(invoice_id)s
+    order by occurred_at asc
+"""
+
+
+def load_execution_log(tenant_id: str, invoice_id: str) -> list["LogEntry"]:
+    """The FULL durable decision history for one invoice, oldest first - the
+    lifetime record the in-memory log can't give (it clear()s on every refresh).
+    The per-invoice timeline reads this so it shows the invoice's whole story
+    (sent, replied, paid) and survives restarts, instead of just the latest run."""
+    from settl.audit.execution_log import LogEntry
+
+    with connect() as conn:
+        rows = conn.execute(
+            _SELECT_SQL, {"tenant_id": tenant_id, "invoice_id": invoice_id}
+        ).fetchall()
+    return [
+        LogEntry(
+            timestamp=r["occurred_at"].isoformat() if hasattr(r["occurred_at"], "isoformat") else str(r["occurred_at"]),
+            invoice_id=invoice_id,
+            agent=r["agent"],
+            decision=r["decision"],
+            reasoning=r["reasoning"],
+            details=r["details"] or {},
+        )
+        for r in rows
+    ]
+
 
 _INSERT_SQL = """
     insert into execution_log (tenant_id, invoice_id, agent, decision, reasoning, details, occurred_at)

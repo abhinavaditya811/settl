@@ -42,6 +42,7 @@ class OAuthFlow(Protocol):
     injectable so the exchange can be tested without a real Google round trip."""
 
     credentials: object
+    code_verifier: str | None
 
     def authorization_url(self, **kwargs) -> tuple[str, str]: ...
     def fetch_token(self, **kwargs) -> dict: ...
@@ -87,13 +88,27 @@ def authorize_url(tenant_id: str, *, flow_factory: FlowFactory | None = None) ->
     """Step 1: the URL to send the vendor's browser to."""
     if not google_oauth_enabled():
         raise RuntimeError("GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET are not set")
+    # PKCE (RFC 7636): the Flow object would auto-generate this itself, but step 1
+    # and step 2 each build their own throwaway Flow (this server keeps no session),
+    # so the verifier has to be minted here and round-tripped through `state` -
+    # otherwise the callback's fresh Flow sends none and Google 400s with
+    # "Missing code verifier".
+    code_verifier = secrets.token_urlsafe(64)
     state = token_crypto.encrypt(
-        json.dumps({"tenant_id": tenant_id, "nonce": secrets.token_urlsafe(16)})
+        json.dumps({
+            "tenant_id": tenant_id,
+            "nonce": secrets.token_urlsafe(16),
+            "code_verifier": code_verifier,
+        })
     )
     flow = (flow_factory or _default_flow)(_redirect_uri())
+    flow.code_verifier = code_verifier  # pre-set so Flow doesn't autogenerate a different one
     url, _ = flow.authorization_url(
         access_type="offline",  # required to get a refresh token back
-        include_granted_scopes="true",
+        # No include_granted_scopes: this OAuth client is shared with NextAuth
+        # sign-in (openid/email/profile), and bundling those into this token's
+        # scope response makes oauthlib's scope-changed check raise. This flow
+        # only ever wants the two Gmail scopes on the persisted refresh token.
         prompt="consent",  # forces a refresh token even on a re-consent
         state=state,
     )
@@ -108,6 +123,7 @@ def handle_callback(code: str, state: str, *, flow_factory: FlowFactory | None =
     tenant_id = payload["tenant_id"]
 
     flow = (flow_factory or _default_flow)(_redirect_uri())
+    flow.code_verifier = payload.get("code_verifier")  # must match the code_challenge from step 1
     flow.fetch_token(code=code)
     credentials = flow.credentials
     refresh_token = getattr(credentials, "refresh_token", None)

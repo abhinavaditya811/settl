@@ -20,6 +20,29 @@ def test_dispute_language_classifies_as_dispute():
     assert result.lane is InboundLane.DISPUTE
 
 
+def test_opt_out_language_classifies_as_opt_out_not_benign():
+    # Regression: "don't send me any emails" fell through to BENIGN and drafted
+    # a further auto-reply - INBOUND_OPT_OUT was voice-only ("stop calling" etc.)
+    # and never wired into the email classifier at all.
+    inv = _by_id()["INV-001"]
+    result = classify_deterministic(inv, "Please don't send me any emails for this invoice.")
+    assert result.lane is InboundLane.OPT_OUT
+
+
+def test_unsubscribe_classifies_as_opt_out():
+    inv = _by_id()["INV-001"]
+    result = classify_deterministic(inv, "unsubscribe")
+    assert result.lane is InboundLane.OPT_OUT
+
+
+def test_stop_sending_emails_classifies_as_opt_out():
+    # Regression: real-mailbox testing found this phrasing ("stop sending... emails",
+    # not "stop emailing" / "don't send") also fell through to BENIGN.
+    inv = _by_id()["INV-001"]
+    result = classify_deterministic(inv, "Can you stop sending me emails?")
+    assert result.lane is InboundLane.OPT_OUT
+
+
 def test_payment_plan_language_classifies_as_payment_plan_request():
     inv = _by_id()["INV-001"]
     result = classify_deterministic(inv, "Can I set up a payment plan for this?")

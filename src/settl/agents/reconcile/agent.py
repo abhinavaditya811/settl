@@ -45,7 +45,16 @@ class ReconcileAgent:
         self._fee_pct = success_fee_pct if success_fee_pct is not None else DEFAULT_POLICY.success_fee_pct
         self._notifier = notifier
 
-    def reconcile(self, invoice: Invoice, events: list[PaymentEvent]) -> ReconcileOutcome:
+    def reconcile(
+        self, invoice: Invoice, events: list[PaymentEvent], *, notify: bool = True
+    ) -> ReconcileOutcome:
+        """Re-derive status over the event log; log + (optionally) notify the operator.
+
+        ``notify=False`` restores state WITHOUT emailing - used when replaying
+        already-processed persisted events at startup (ReconciliationDesk.load_events).
+        The "Recovered/Needs review" email already fired when the payment was first
+        discovered live; re-firing it on every restart is pure spam (an observed bug -
+        the operator got the same "Recovered" email once per server restart)."""
         tally = tally_events(invoice, events)
         status = classify(invoice, tally)
 
@@ -56,7 +65,7 @@ class ReconcileAgent:
                 f"Success fee {fee.fee_amount} {fee.currency} recorded (not collected)."
             )
             self._record(invoice, "paid", reasoning, fee_amount=str(fee.fee_amount))
-            if self._notifier is not None:
+            if self._notifier is not None and notify:
                 self._notifier.notify_paid(invoice, fee)
             return ReconcileOutcome(
                 status=status, stop_loop=True, amount_recovered=tally.net_paid,
@@ -87,7 +96,7 @@ class ReconcileAgent:
             }
             reasoning = reasons[status]
             self._record(invoice, status.value, reasoning)
-            if self._notifier is not None:
+            if self._notifier is not None and notify:
                 self._notifier.notify_escalation(invoice, reasoning)
             return ReconcileOutcome(
                 status=status, stop_loop=True, amount_recovered=tally.net_paid,

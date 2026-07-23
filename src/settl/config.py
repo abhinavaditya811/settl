@@ -23,7 +23,10 @@ DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
 # High-volume routing model (CLAUDE.md: Flash for orchestrator-style routing, Pro for
 # judgment). Used by the inbound classifier (agents/inbound) - classifying a reply's
-# lane is routing, not drafting/strategy judgment.
+# lane is routing, not drafting/strategy judgment. Preview models often have the
+# tightest free-tier quota (429) - set GEMINI_FLASH_MODEL=gemini-2.5-flash-lite (a
+# small, higher-quota model that classifies mail intent well) to override. Fail-safe:
+# on any 429/error the classifier falls back to the deterministic regex backstop.
 DEFAULT_GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
 
 
@@ -36,6 +39,19 @@ def gemini_flash_model_name(override: str | None = None) -> str:
     """Resolve the Flash routing-model id: explicit override → GEMINI_FLASH_MODEL env
     → shared default."""
     return override or os.environ.get("GEMINI_FLASH_MODEL", DEFAULT_GEMINI_FLASH_MODEL)
+
+
+# Groq (open-source Llama on an OpenAI-compatible API) - the inbound-classifier's
+# higher-quota, faster alternative to Gemini Flash, whose free tier kept 429-ing and
+# silently dropping the classification to the weaker regex backstop. A small instruct
+# model is plenty for 4-lane routing; override with GROQ_MODEL if the id changes
+# (they do) - a bad id just fails safe to the regex backstop.
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+
+
+def groq_model_name(override: str | None = None) -> str:
+    """Resolve the Groq model id: explicit override → GROQ_MODEL env → shared default."""
+    return override or os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
 
 
 def load_dotenv(path: str | Path | None = None) -> dict[str, str]:

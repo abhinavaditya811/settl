@@ -29,6 +29,50 @@ class LogEntry:
     details: dict[str, Any] = field(default_factory=dict)
 
 
+# Steps that are REAL EVENTS - a thing that actually happened at a point in time,
+# not a re-derivable state. Every occurrence is kept, even if byte-identical to an
+# earlier one (two real sends can share the exact reasoning text "emailed INV-1 via
+# Gmail SMTP" with no date/content in it - a global dedup once silently hid the
+# second, real send). Matched by agent (any decision) or by exact (agent, decision).
+_EVENT_AGENTS = frozenset({"inbound_classifier", "operator_flag", "payment_plan_negotiate"})
+_EVENT_STEPS = frozenset({
+    ("email_sender", "sent"), ("sms_sender", "sent"), ("sender", "sent"),
+    ("human_approval", "approved"),
+    ("reconcile", "paid"), ("reconcile", "partial"), ("reconcile", "disputed"),
+})
+
+
+def _is_event(e: LogEntry) -> bool:
+    return e.agent in _EVENT_AGENTS or (e.agent, e.decision) in _EVENT_STEPS
+
+
+def deduped_entries(entries: list[LogEntry]) -> list[LogEntry]:
+    """Keep every real EVENT (send, approval, reply classification, payment - the
+    invoice's actual story); collapse identical re-derivable STATE steps (ingestion,
+    strategy, gate re-checks, a withhold) to one, however far apart they are.
+
+    The durable log is append-only, and every server restart / refresh re-runs the
+    full pipeline (run_batch) and re-logs the same ingestion/strategy/gate steps -
+    so an invoice sitting in "hold" accumulates one identical [ingestion, strategy]
+    pair per restart. Those are re-computations of an unchanged state, not new
+    events; deduping them globally by (agent, decision, reasoning) removes the
+    noise. Events are NEVER deduped, so two genuinely separate sends that happen
+    to share identical reasoning both survive (an earlier global-dedup bug hid the
+    second one)."""
+    seen: set[tuple[str, str, str]] = set()
+    out: list[LogEntry] = []
+    for e in entries:
+        if _is_event(e):
+            out.append(e)
+            continue
+        key = (e.agent, e.decision, e.reasoning)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
+
+
 class ExecutionLog:
     """Append-only log. Mirrors each entry to any attached ``LogSink`` (JSONL by
     default when ``jsonl_path`` is given, plus any injected ``sinks``)."""

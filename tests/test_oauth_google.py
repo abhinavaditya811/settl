@@ -74,6 +74,21 @@ def test_handle_callback_recovers_tenant_id_and_encrypts_the_refresh_token(monke
     assert fake.fetch_token_calls == [{"code": "auth-code"}]
 
 
+def test_handle_callback_passes_the_same_code_verifier_used_in_authorize_url():
+    # Regression: step 1 and step 2 each build their own throwaway Flow, so the
+    # verifier has to round-trip through `state` - a real Flow.fetch_token()
+    # sends None (400 "Missing code verifier") if this ever regresses.
+    fake = _FakeFlow("http://localhost/cb")
+    url = oauth_google.authorize_url("t_demo", flow_factory=lambda uri: fake)
+    assert fake.code_verifier is not None
+    sent_verifier = fake.code_verifier
+    state = url.split("state=")[1]
+
+    callback_fake = _FakeFlow("http://localhost/cb")
+    oauth_google.handle_callback("auth-code", state, flow_factory=lambda uri: callback_fake)
+    assert callback_fake.code_verifier == sent_verifier
+
+
 def test_handle_callback_rejects_a_tampered_state():
     with pytest.raises(ValueError):
         oauth_google.handle_callback("auth-code", "not-a-real-state-token")

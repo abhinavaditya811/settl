@@ -41,7 +41,8 @@ export default function SignInPage() {
         </GoogleButton>
         <Fine>
           We request permission to send email on your behalf. We never read your
-          inbox and never hold your funds.
+          inbox and never hold your funds. By continuing, you agree to our{" "}
+          <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
         </Fine>
       </Card>
     </Wrap>
@@ -142,5 +143,8 @@ const Fine = styled.p`
   && {
     font-size: 12px;
     color: ${({ theme }) => theme.textMuted};
+  }
+  a {
+    color: ${({ theme }) => theme.accent};
   }
 `;

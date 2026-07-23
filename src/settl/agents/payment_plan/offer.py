@@ -83,4 +83,7 @@ def reoffer(plan: PaymentPlan, invoice: Invoice, template: PaymentPlanTemplate) 
         offer_count=plan.offer_count + 1,
         decided_at=None,
         decided_by=None,
+        # A fresh offer supersedes whatever the debtor said about the LAST one.
+        negotiation_outcome=None,
+        requested_terms=None,
     )
