@@ -97,7 +97,11 @@ def test_fee_is_recorded_at_the_configured_pct():
 # --- the agent: PAID closes the loop, records, notifies -----------------------
 
 
-def test_paid_records_fee_stops_loop_and_notifies():
+def test_paid_records_fee_stops_loop_and_notifies(monkeypatch):
+    # _recipient() reads SETTL_SMTP_USER for who to notify - unset in CI (only
+    # present via a dev .env locally), which would otherwise skip the injected
+    # email_fn entirely regardless of what it's mocked to do.
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
     log = ExecutionLog()
     sent = []
     notifier = OperatorNotifier(log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)))
@@ -151,6 +155,7 @@ def test_demo_tenant_notification_is_logged_but_not_emailed(monkeypatch):
 
 def test_demo_notification_emails_when_opted_in(monkeypatch):
     monkeypatch.setenv("SETTL_LIVE_SEND_DEMO", "1")
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
     log = ExecutionLog()
     sent = []
     notifier = OperatorNotifier(
@@ -161,7 +166,8 @@ def test_demo_notification_emails_when_opted_in(monkeypatch):
     assert sent and "INV-R" in sent[0][1]  # opted in - demo notice goes out
 
 
-def test_non_demo_tenant_still_notifies():
+def test_non_demo_tenant_still_notifies(monkeypatch):
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
     log = ExecutionLog()
     sent = []
     notifier = OperatorNotifier(
