@@ -38,6 +38,12 @@ class ReconcileStatus(str, Enum):
     REPLY = "reply"  # an inbound reply/dispute → escalate, stop the loop
     DISPUTED = "disputed"  # a chargeback → escalate, stop the loop
     ANOMALY = "anomaly"  # unusable data (currency mismatch) → escalate, never act
+    # An active PaymentPlan (SCHEMA.md §8) is behind its own schedule - paid less
+    # than the cumulative amount due by as_of_date. Deliberately NOT in
+    # ESCALATING_STATUSES: a missed installment is reminder-first
+    # (agents/payment_plan/monitor.py), not an immediate hard escalate like a
+    # dispute/chargeback/anomaly.
+    INSTALLMENT_OVERDUE = "installment_overdue"
 
 
 # Statuses that must route to a human and stop the autonomous loop.

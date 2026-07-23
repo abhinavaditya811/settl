@@ -53,20 +53,37 @@ class StripeLinkMinter:
             self._client = stripe.StripeClient(self._api_key)
         return self._client
 
-    def mint(self, invoice: Invoice) -> str | None:
+    def mint(
+        self,
+        invoice: Invoice,
+        *,
+        installment_index: int | None = None,
+        amount: Decimal | None = None,
+    ) -> str | None:
+        """Mint a link for the invoice total, or - when ``installment_index`` is
+        given (SCHEMA.md §8) - for one PaymentPlan installment's own ``amount``,
+        cached and idempotency-keyed separately per installment so reconcile can
+        tell which installment a payment settled without attribution guesswork."""
         if not self._api_key:
             return None
         # Non-custodial guard: never mint on a LIVE key without a connected account -
         # that would route real money through the platform.
         if self._api_key.startswith("sk_live_") and not self._connection_ref:
             return None
-        amount = Decimal(invoice.amount_due)
-        if amount <= 0:
+        amt = Decimal(amount) if amount is not None else Decimal(invoice.amount_due)
+        if amt <= 0:
             return None
-        if invoice.invoice_id in self._cache:
-            return self._cache[invoice.invoice_id]
+        cache_key = self._cache_key(invoice.invoice_id, installment_index)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
         key = f"{invoice.tenant_id}-{invoice.invoice_id}"
+        product_name = f"Invoice {invoice.invoice_id} - {invoice.debtor_name}"
+        metadata = {"settl_invoice_id": invoice.invoice_id, "settl_tenant_id": invoice.tenant_id}
+        if installment_index is not None:
+            key = f"{key}-inst{installment_index}"
+            product_name += f" (installment {installment_index + 1})"
+            metadata["settl_installment_index"] = str(installment_index)
         base: dict = {"stripe_account": self._connection_ref} if self._connection_ref else {}
         try:
             client = self._get_client()
@@ -74,10 +91,8 @@ class StripeLinkMinter:
                 {
                     "currency": invoice.currency.lower(),
                     # Smallest currency unit - correct for zero-decimal currencies too.
-                    "unit_amount": to_minor_units(amount, invoice.currency),
-                    "product_data": {
-                        "name": f"Invoice {invoice.invoice_id} - {invoice.debtor_name}"
-                    },
+                    "unit_amount": to_minor_units(amt, invoice.currency),
+                    "product_data": {"name": product_name},
                 },
                 {**base, "idempotency_key": f"settl-price-{key}"},
             )
@@ -86,22 +101,24 @@ class StripeLinkMinter:
                     "line_items": [{"price": price.id, "quantity": 1}],
                     # Correlation tags so a webhook can route the payment/refund/dispute
                     # back to this invoice (SCHEMA.md §7).
-                    "metadata": {
-                        "settl_invoice_id": invoice.invoice_id,
-                        "settl_tenant_id": invoice.tenant_id,
-                    },
+                    "metadata": metadata,
                 },
                 {**base, "idempotency_key": f"settl-link-{key}"},
             )
-            self._cache[invoice.invoice_id] = link.url
-            self._link_ids[invoice.invoice_id] = link.id  # remembered for payment polling
+            self._cache[cache_key] = link.url
+            self._link_ids[cache_key] = link.id  # remembered for payment polling
             return link.url
         except Exception:
             return None  # fail-safe: caller falls back to the invoice link / hard-fails
 
-    def link_id(self, invoice_id: str) -> str | None:
-        """The payment link id minted for this invoice (None if not minted)."""
-        return self._link_ids.get(invoice_id)
+    def link_id(self, invoice_id: str, *, installment_index: int | None = None) -> str | None:
+        """The payment link id minted for this invoice (or one of its
+        installments), None if not minted."""
+        return self._link_ids.get(self._cache_key(invoice_id, installment_index))
+
+    @staticmethod
+    def _cache_key(invoice_id: str, installment_index: int | None) -> str:
+        return invoice_id if installment_index is None else f"{invoice_id}:{installment_index}"
 
     def paid_sessions(self, link_id: str, currency: str = "usd") -> list[tuple[str, Decimal]]:
         """Every *paid* checkout session for a link as ``(reference, amount)`` in the
