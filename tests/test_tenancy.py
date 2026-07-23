@@ -107,6 +107,42 @@ def test_stricter_tenant_policy_tightens_the_frequency_gate():
     assert "FREQUENCY_LIMIT" in result.codes
 
 
+# --- policy slice → payment-plan autonomy (SCHEMA.md §8) ---------------------
+
+
+def test_payment_plan_autonomy_flows_end_to_end_through_the_orchestrator():
+    # A repeat payer whose inbound reply asked for a payment plan - by default
+    # this hard-escalates (rule_payment_plan_request); opting in via policy and
+    # clearing the amount floor must let it through the *whole* wiring path
+    # (Policy → Orchestrator._default_gate → ComplianceGate), not just the gate
+    # in isolation (already covered in test_compliance_gate.py).
+    inv = _repeat_payer(payment_link="https://buy.stripe.com/test_x")
+    inv = inv.model_copy(
+        update={
+            "prior_contacts": [
+                *inv.prior_contacts,
+                PriorContact(
+                    occurred_on=date.today(),
+                    direction=ContactDirection.INBOUND,
+                    channel=Channel.EMAIL,
+                    summary="can we set up a payment plan for this?",
+                ),
+            ]
+        }
+    )
+
+    default_config = TenantConfig(tenant_id="t_test")
+    res = Orchestrator(config=default_config).run_one(inv)
+    assert res.terminal_state is TerminalState.ESCALATED
+
+    autonomy_config = TenantConfig(
+        tenant_id="t_test",
+        policy=policy_with(payment_plan_autonomy=True, payment_plan_min_amount=Decimal("0")),
+    )
+    res = Orchestrator(config=autonomy_config).run_one(inv)
+    assert res.terminal_state is TerminalState.SENT
+
+
 # --- voice slice → drafting ---------------------------------------------------
 
 

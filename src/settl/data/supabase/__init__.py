@@ -10,6 +10,7 @@ from settl.data.supabase.guardrails import insert_rule, load_rules
 from settl.data.supabase.ingest import insert_invoices
 from settl.data.supabase.invoices import load_invoices
 from settl.data.supabase.payment_events_store import load_events, upsert_event
+from settl.data.supabase.payment_plans_store import load_plans, upsert_plan
 from settl.data.supabase.tenant_store import get_or_create_tenant
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
     "load_events",
     "upsert_event",
     "write_contact",
+    "load_plans",
+    "upsert_plan",
     "PostgresLogSink",
     "get_or_create_tenant",
     "insert_invoices",
