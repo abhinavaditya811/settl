@@ -73,7 +73,12 @@ A message must be **blocked and escalated to a human** if it would:
 - Violate contact-frequency limits or configured tone bounds.
 - Concern **consumer (non-B2B) debt** - we operate first-party + B2B only, to stay clear of
   FDCPA / debt-collector licensing. If `is_b2b` is false, escalate; do not send.
-- Respond to a debtor who disputes the debt or requests a payment plan.
+- Respond to a debtor who disputes the debt - always escalate, no exceptions.
+- Respond to a debtor who requests a payment plan - escalate by default. A tenant may opt
+  into bounded autonomous handling (SCHEMA.md §8 `PaymentPlan`): the AI may offer
+  vendor-preapproved templates and gather non-binding terms, but no plan is ever confirmed
+  to the debtor without the vendor's explicit approve/reject. Every other rule on this list,
+  especially the `is_b2b` check, still applies regardless of this setting.
 
 Additional hard rules:
 - **Never custodial.** We never touch funds. Payment always flows through the customer's own

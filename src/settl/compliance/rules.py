@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import time
+from decimal import Decimal
 
 from settl.compliance import patterns as P
 from settl.schema.invoice import (
@@ -93,17 +94,33 @@ def rule_inbound_dispute(invoice: Invoice) -> list[RuleViolation]:
     return []
 
 
-def rule_payment_plan_request(invoice: Invoice) -> list[RuleViolation]:
+def rule_payment_plan_request(
+    invoice: Invoice,
+    *,
+    autonomy_enabled: bool = False,
+    min_amount: Decimal | None = None,
+) -> list[RuleViolation]:
+    """Escalates a payment-plan request UNLESS the tenant opted into bounded
+    autonomy (SCHEMA.md §8) and this invoice clears the vendor's own amount floor.
+    ``is_b2b`` is enforced separately by ``rule_consumer_debt`` and is never
+    overridable by this setting - CLAUDE.md's compliance rules stay in force
+    regardless of payment-plan autonomy."""
     hits = P.matches(_inbound_text(invoice), P.INBOUND_PAYMENT_PLAN_RE)
-    if hits:
-        return [
-            RuleViolation(
-                "PAYMENT_PLAN_REQUEST",
-                f"Debtor requested a payment plan ({', '.join(hits)}) - escalate; "
-                "do not auto-negotiate.",
-            )
-        ]
-    return []
+    if not hits:
+        return []
+    eligible = autonomy_enabled and (min_amount is None or invoice.amount_due >= min_amount)
+    if eligible:
+        # The PaymentPlan flow (agents/payment_plan/) handles this, not a hard
+        # escalate - offer/negotiate is still non-binding; nothing sends to the
+        # debtor without the vendor's explicit approval either way.
+        return []
+    return [
+        RuleViolation(
+            "PAYMENT_PLAN_REQUEST",
+            f"Debtor requested a payment plan ({', '.join(hits)}) - escalate; "
+            "do not auto-negotiate.",
+        )
+    ]
 
 
 def rule_contact_frequency(

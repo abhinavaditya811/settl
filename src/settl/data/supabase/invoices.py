@@ -22,7 +22,8 @@ _INVOICES_SQL = """
 """
 
 _CONTACTS_SQL = """
-    select invoice_id, direction, channel, occurred_at, summary
+    select invoice_id, direction, channel, occurred_at, summary,
+           provider_message_id, in_reply_to, thread_ref, classification, audit_ref
     from contacts
     order by occurred_at
 """
@@ -45,6 +46,11 @@ def load_invoices() -> list[Invoice]:
                 direction=ContactDirection(c["direction"]),
                 channel=Channel(c["channel"]),
                 summary=c["summary"] or "",
+                provider_message_id=c["provider_message_id"],
+                in_reply_to=c["in_reply_to"],
+                thread_ref=c["thread_ref"],
+                classification=c["classification"],
+                audit_ref=c["audit_ref"],
             )
         )
 

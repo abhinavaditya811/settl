@@ -37,8 +37,15 @@ _UPSERT_INVOICE_SQL = """
 _CLEAR_SEEDED_CONTACTS_SQL = "delete from contacts where invoice_id = %(invoice_id)s"
 
 _INSERT_CONTACT_SQL = """
-    insert into contacts (tenant_id, invoice_id, direction, channel, occurred_at, summary)
-    values (%(tenant_id)s, %(invoice_id)s, %(direction)s, %(channel)s, %(occurred_at)s, %(summary)s)
+    insert into contacts (
+        tenant_id, invoice_id, direction, channel, occurred_at, summary,
+        provider_message_id, in_reply_to, thread_ref, classification, audit_ref
+    )
+    values (
+        %(tenant_id)s, %(invoice_id)s, %(direction)s, %(channel)s, %(occurred_at)s,
+        %(summary)s, %(provider_message_id)s, %(in_reply_to)s, %(thread_ref)s,
+        %(classification)s, %(audit_ref)s
+    )
 """
 
 
@@ -92,6 +99,11 @@ def seed() -> None:
                         "channel": c.channel.value,
                         "occurred_at": c.occurred_on,
                         "summary": c.summary,
+                        "provider_message_id": c.provider_message_id,
+                        "in_reply_to": c.in_reply_to,
+                        "thread_ref": c.thread_ref,
+                        "classification": c.classification,
+                        "audit_ref": c.audit_ref,
                     },
                 )
 
