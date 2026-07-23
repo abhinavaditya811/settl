@@ -21,6 +21,9 @@ api = [
     "google-auth>=2.30",
     "google-auth-oauthlib>=1.2",
     "cryptography>=42.0",
+    # The Gmail REST client (gmail/client.py) uses plain requests; its tests run in
+    # CI (which installs .[api], not .[gmail]), so requests must live here too.
+    "requests>=2.31",
 ]
 gemini = ["google-genai>=1.0"]
 stripe = ["stripe>=9.0"]
