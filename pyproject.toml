@@ -11,10 +11,25 @@ dependencies = ["pydantic>=2.6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
-api = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    # The OAuth routes (api/oauth_google.py, api/oauth_routes.py) and token_crypto
+    # are imported unconditionally by the API, so these are hard API deps, not the
+    # optional gmail extra - keeping them here means `pip install .[api]` (and CI)
+    # gets a working import graph.
+    "google-auth>=2.30",
+    "google-auth-oauthlib>=1.2",
+    "cryptography>=42.0",
+]
 gemini = ["google-genai>=1.0"]
 stripe = ["stripe>=9.0"]
 db = ["psycopg[binary]>=3.1"]
+gmail = [
+    # The MCP server library - only imported lazily by the Gmail MCP edge (later
+    # in this sub-stack), so it stays an optional extra.
+    "mcp[cli]>=1.0,<2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

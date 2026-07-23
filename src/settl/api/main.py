@@ -16,6 +16,8 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /invoices/{id}/payment-plan          the offered/active PaymentPlan, if any
     POST /invoices/{id}/payment-plan/offer    offer the vendor's configured template
     POST /invoices/{id}/payment-plan/decide   vendor approve/reject (SCHEMA.md §8)
+    GET  /oauth/google/authorize    redirect to Google's consent screen (api/oauth_routes.py)
+    GET  /oauth/google/callback     Google's redirect back after consent
     POST /check-payments            poll Stripe + auto-reconcile paid links
     POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
     POST /retell/webhook            Retell end-of-call events → call artifact + opt-out
@@ -65,6 +67,7 @@ from settl.api.schemas import (
     TraceEntry,
     WebhookAck,
 )
+from settl.api.oauth_routes import router as oauth_router
 from settl.api.state import BoardState
 from settl.orchestrator import TerminalState
 from settl.orchestrator.result import PipelineResult
@@ -82,6 +85,7 @@ _RUNS = Path(
 _RUNS.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Settl Engine API", version="0.1.0")
+app.include_router(oauth_router)
 
 _origins = os.environ.get(
     "SETTL_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
