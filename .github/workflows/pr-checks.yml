@@ -12,10 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Include the `gmail` extra so the Gmail/MCP-server tests (which lazy-import
-      # `mcp`) run in CI instead of failing to collect. Keeps `mcp` an optional
-      # dependency for production installs that don't need the inbound-mail edge.
-      - run: pip install -e ".[dev,api,db,gmail]"
+      - run: pip install -e ".[dev,api,db]"
       # -m pytest (not bare `pytest`) so the repo root lands on sys.path -
       # tests/test_voice_hooks.py etc import fixtures via `from tests.x import y`.
       - run: python -m pytest -q
