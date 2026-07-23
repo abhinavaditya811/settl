@@ -19,6 +19,7 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /oauth/google/authorize    redirect to Google's consent screen (api/oauth_routes.py)
     GET  /oauth/google/callback     Google's redirect back after consent
     POST /check-payments            poll Stripe + auto-reconcile paid links
+    POST /check-inbound-mail        poll one tenant's Gmail for new replies (SCHEMA.md §7)
     POST /stripe/webhook            Stripe payment/refund/dispute events (server-side)
     POST /retell/webhook            Retell end-of-call events → call artifact + opt-out
     POST /refresh                   re-run the board over the dataset
@@ -47,6 +48,7 @@ from settl.api.schemas import (
     ApproveResponse,
     BoardResponse,
     BoardSummary,
+    CheckInboundMailResponse,
     CheckPaymentsResponse,
     CsvImportBody,
     CsvImportResponse,
@@ -290,6 +292,13 @@ def decide_payment_plan_route(
 @app.get("/guardrails", response_model=list[GuardrailView])
 def guardrails(scope: BoardScope = Depends(board_scope)) -> list[GuardrailView]:
     return [GuardrailView(**g) for g in state.guardrails(scope.tenant_ids)]
+
+
+@app.post("/check-inbound-mail", response_model=CheckInboundMailResponse)
+def check_inbound_mail(tenant_id: str) -> CheckInboundMailResponse:
+    """Poll one tenant's Gmail for new replies (SCHEMA.md §7). No-op ([]) if
+    that tenant never connected Gmail. Mirrors /check-payments' shape."""
+    return CheckInboundMailResponse(changed=state.poll_inbound_mail(tenant_id))
 
 
 @app.post("/check-payments", response_model=CheckPaymentsResponse)

@@ -30,6 +30,13 @@ _INSERT_SQL = """
     )
 """
 
+_FIND_BY_MESSAGE_ID_SQL = """
+    select tenant_id, invoice_id
+    from contacts
+    where provider_message_id = %(message_id)s
+    limit 1
+"""
+
 
 def write_contact(tenant_id: str, invoice_id: str, contact: PriorContact) -> None:
     """Persist one touch (ours or the debtor's). Caller checks
@@ -49,3 +56,14 @@ def write_contact(tenant_id: str, invoice_id: str, contact: PriorContact) -> Non
     }
     with connect() as conn:
         conn.execute(_INSERT_SQL, params)
+
+
+def find_by_message_id(message_id: str) -> tuple[str, str] | None:
+    """(tenant_id, invoice_id) of the contact row carrying this Message-ID, or
+    None. Serves two callers: correlating a reply's In-Reply-To back to the
+    invoice it's threaded to, and - reusing the same lookup - the inbound-mail
+    poll's idempotency check (a message already recorded here was already
+    processed, so a redelivered poll result is a no-op, not a duplicate)."""
+    with connect() as conn:
+        row = conn.execute(_FIND_BY_MESSAGE_ID_SQL, {"message_id": message_id}).fetchone()
+    return (row["tenant_id"], row["invoice_id"]) if row else None

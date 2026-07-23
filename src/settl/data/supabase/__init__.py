@@ -4,7 +4,7 @@ run or the test suite never touches the network, same as every other optional
 integration in this codebase (Stripe, Gemini, Agent Engine)."""
 
 from settl.data.supabase.connection import supabase_enabled
-from settl.data.supabase.contacts_store import write_contact
+from settl.data.supabase.contacts_store import find_by_message_id, write_contact
 from settl.data.supabase.execution_log_sink import PostgresLogSink
 from settl.data.supabase.guardrails import insert_rule, load_rules
 from settl.data.supabase.ingest import insert_invoices
@@ -22,6 +22,7 @@ __all__ = [
     "load_events",
     "upsert_event",
     "write_contact",
+    "find_by_message_id",
     "load_plans",
     "upsert_plan",
     "load_token",
