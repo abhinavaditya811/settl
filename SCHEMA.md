@@ -233,9 +233,14 @@ recorded once.
 ## 7. Inbound mail (MCP edge) - schema touchpoints
 
 Inbound replies are read from the **vendor's own mailbox** via their OAuth token, so
-they are tenant-scoped by construction. An MCP server is the token-contained edge +
-gated action arm (three narrow tools: `read_threads`, `draft_reply`, `send_reply`);
-it is not the trigger (a scheduler / Gmail watch webhook is) and never a decider.
+they are tenant-scoped by construction. An MCP server is the token-contained edge -
+two narrow tools, `read_threads` and `send_reply` (`src/settl/gmail/mcp_server.py`).
+Classifying and drafting a reply never touch the Gmail token, so they stay in the
+main orchestrator process (`agents/inbound`, `agents/drafting/reply_*`) instead of
+being smuggled through this boundary - only the two actions that actually need the
+token live in the token-holding process. The MCP server is not the trigger (a poll
+via `POST /check-inbound-mail` is, per FR-5's decision to start with polling rather
+than Gmail watch/Pub/Sub) and never a decider - it reads and sends, nothing more.
 
 - Inbound is normalized into a canonical `contact` row (§2) - the same
   normalize-at-the-edge seam as invoices. Correlation to an invoice is by
