@@ -15,7 +15,14 @@
         "voice_block": "Warm and concise; assume good faith. Sign off as 'The Brightwork team'.",
         "signature": "The Brightwork team"
       },
-      "policy": {}
+      "policy": {
+        "payment_plan_autonomy": true,
+        "payment_plan_min_amount": 100,
+        "payment_plan_templates": [
+          {"installments": 3, "period_days": 30, "label": "3 installments over 90 days"},
+          {"installments": 2, "period_days": 15, "label": "2 installments over 30 days"}
+        ]
+      }
     },
     {
       "tenant_id": "t_harborside",

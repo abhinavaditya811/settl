@@ -6,6 +6,7 @@ from decimal import Decimal
 from settl.agents.payment_plan import (
     MAX_OFFER_COUNT,
     NegotiationOutcome,
+    PaymentPlanStatus,
     build_installments,
     offer_plan,
     read_response,
@@ -13,7 +14,8 @@ from settl.agents.payment_plan import (
     select_template,
 )
 from settl.data import load_synthetic_invoices
-from settl.tenancy.config import PaymentPlanTemplate
+from settl.orchestrator import Orchestrator, TerminalState, decide_payment_plan
+from settl.tenancy.config import PaymentPlanTemplate, TenantConfig, policy_with
 
 TEMPLATE_3X30 = PaymentPlanTemplate(installments=3, period_days=30, label="3 over 90 days")
 TEMPLATE_2X15 = PaymentPlanTemplate(installments=2, period_days=15, label="2 over 30 days")
@@ -100,3 +102,67 @@ def test_negotiation_treats_anything_else_as_a_request_for_different_terms():
     # The raw text is carried through for the vendor to see, never parsed into a
     # new commitment here - the AI never negotiates the actual terms itself.
     assert result.requested_terms == "Can we do 6 months instead?"
+
+
+# --- vendor approve/reject (SCHEMA.md §8) ---------------------------------------
+
+
+def _autonomous_orch() -> Orchestrator:
+    # The gate re-scans invoice.prior_contacts on every evaluate() call, so the
+    # confirmation send still needs the tenant's autonomy opt-in - exactly as it
+    # would have needed to reach the offer/decide step in the first place.
+    config = TenantConfig(
+        tenant_id="t_test",
+        policy=policy_with(payment_plan_autonomy=True, payment_plan_min_amount=0),
+    )
+    return Orchestrator(config=config)
+
+
+def test_decide_payment_plan_approve_sends_confirmation_and_activates():
+    # INV-006 already has an outbound touch (not a new debtor), so first-contact
+    # approval isn't in play here - only the plan-confirmation decision is tested.
+    inv = _invoice("INV-006")
+    plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")
+    orch = _autonomous_orch()
+    new_plan, result = decide_payment_plan(orch, inv, plan, approved=True)
+    assert result.terminal_state is TerminalState.SENT
+    assert new_plan.status is PaymentPlanStatus.ACTIVE
+    assert new_plan.decided_at is not None
+    assert str(plan.installments[0].amount) in result.message
+
+
+def test_decide_payment_plan_reject_with_reoffer_room_holds():
+    inv = _invoice("INV-006")
+    plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")  # offer_count = 1
+    orch = Orchestrator()
+    new_plan, result = decide_payment_plan(orch, inv, plan, approved=False)
+    assert result.terminal_state is TerminalState.HELD
+    assert new_plan.status is PaymentPlanStatus.REJECTED
+    assert new_plan.can_reoffer
+
+
+def test_decide_payment_plan_reject_at_offer_cap_escalates():
+    inv = _invoice("INV-006")
+    plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")
+    for _ in range(MAX_OFFER_COUNT - 1):
+        plan = reoffer(plan, inv, TEMPLATE_3X30)
+    assert plan.offer_count == MAX_OFFER_COUNT
+    orch = Orchestrator()
+    new_plan, result = decide_payment_plan(orch, inv, plan, approved=False)
+    assert result.terminal_state is TerminalState.ESCALATED
+    assert not new_plan.can_reoffer
+
+
+def test_decide_payment_plan_approve_is_still_blocked_by_other_gate_rules():
+    # Consumer (non-B2B) debt must block a plan confirmation exactly like any
+    # other message - approving a plan is never a way around a hard compliance
+    # rule. Proves this reuses the real gate rather than skipping it.
+    inv = _invoice("INV-003")  # is_b2b = False in the fixture
+    assert not inv.is_b2b
+    plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")
+    orch = _autonomous_orch()  # autonomy ON - still must not bypass is_b2b
+    _, result = decide_payment_plan(orch, inv, plan, approved=True)
+    assert result.terminal_state is TerminalState.ESCALATED
+    gate_step = next(s for s in result.steps if s.agent == "compliance_gate")
+    assert gate_step.decision == "escalate"
+    assert "b2b" in gate_step.reasoning.lower() or "consumer" in gate_step.reasoning.lower()

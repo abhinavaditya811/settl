@@ -277,3 +277,53 @@ def test_guardrails_route_returns_a_list():
     r = client.get("/guardrails")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+# --- payment plan: offer -> decide (SCHEMA.md §8) -----------------------------
+
+
+def test_payment_plan_offer_404s_for_a_tenant_with_no_templates_configured():
+    # t_harborside has no payment_plan_templates in the fixture.
+    r = client.post("/invoices/INV-002/payment-plan/offer")
+    assert r.status_code == 409
+
+
+def test_payment_plan_get_404s_when_none_offered():
+    r = client.get("/invoices/INV-005/payment-plan")
+    assert r.status_code == 404
+
+
+def test_payment_plan_offer_then_approve_end_to_end():
+    from settl.api.state import BoardState
+
+    board = BoardState()
+    # INV-005 is t_brightwork (fixture-configured with autonomy + templates),
+    # already has a prior outbound touch so FIRST_CONTACT_APPROVAL isn't in play.
+    plan = board.offer_payment_plan("INV-005")
+    assert plan is not None
+    assert plan.status.value == "proposed"
+    assert plan.template_ref == "3 installments over 90 days"
+
+    fetched = board.payment_plan("INV-005")
+    assert fetched.id == plan.id
+
+    out = board.decide_payment_plan("INV-005", True)
+    assert out["plan_status"] == "active"
+    assert out["terminal_state"] == "sent"
+    assert board.payment_plan("INV-005").status.value == "active"
+
+
+def test_payment_plan_reject_holds_for_reoffer_within_the_cap():
+    from settl.api.state import BoardState
+
+    board = BoardState()
+    board.offer_payment_plan("INV-005")
+    out = board.decide_payment_plan("INV-005", False)
+    assert out["plan_status"] == "rejected"
+    assert out["offer_count"] == 1
+    assert out["terminal_state"] == "held"
+
+
+def test_payment_plan_decide_without_an_offer_is_409():
+    r = client.post("/invoices/INV-005/payment-plan/decide", json={"approved": True})
+    assert r.status_code == 409

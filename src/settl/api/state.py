@@ -37,7 +37,9 @@ from settl.compliance.rules import WAIVABLE_CODES
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.data import supabase as db
+from settl.agents.payment_plan.models import PaymentPlan
 from settl.api.metrics import compute_metrics
+from settl.api.payment_plan_board import PaymentPlanBoard
 from settl.governance import Directive, OperatorRule, RuleStore, Scope
 from settl.orchestrator import Orchestrator, TerminalState
 from settl.orchestrator.result import PipelineResult, PipelineStep
@@ -83,6 +85,7 @@ class BoardState:
             log=self._log, sender=sender, drafter=drafter, rules_store=self._rules
         )
         self._approver = Orchestrator(log=self._log, sender=sender, rules_store=self._rules)
+        self._payment_plans = PaymentPlanBoard(log=self._log)
         self._results: dict[str, PipelineResult] = {}
         # Append-only money-event log per invoice; poll AND webhook write here and
         # reconcile always re-derives over the full log (so refunds/disputes reverse).
@@ -248,6 +251,34 @@ class BoardState:
         new_result = self._approver.approve_and_send(invoice, outgoing, channel)
         self._results[invoice_id] = new_result  # reflect the outcome on the board
         return new_result
+
+    def payment_plan(self, invoice_id: str) -> PaymentPlan | None:
+        return self._payment_plans.get(invoice_id)
+
+    def offer_payment_plan(self, invoice_id: str) -> PaymentPlan | None:
+        found = self.get(invoice_id)
+        return self._payment_plans.offer(found[0]) if found else None
+
+    def decide_payment_plan(self, invoice_id: str, approved: bool) -> dict | None:
+        """Vendor approve/reject on an offered PaymentPlan (SCHEMA.md §8) - same
+        one-tap shape as approve(), re-running the compliance gate on approval via
+        PaymentPlanBoard.decide -> orchestrator.decide_payment_plan."""
+        found = self.get(invoice_id)
+        if not found:
+            return None
+        invoice, _ = found
+        decided = self._payment_plans.decide(self._approver, invoice, approved)
+        if decided is None:
+            return None
+        plan, result = decided
+        self._results[invoice_id] = result  # reflect the outcome on the board
+        return {
+            "invoice_id": invoice_id,
+            "plan_status": plan.status.value,
+            "offer_count": plan.offer_count,
+            "terminal_state": result.terminal_state.value,
+            "detail": result.detail,
+        }
 
     def flag_decision(
         self,
