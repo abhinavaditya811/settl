@@ -42,10 +42,23 @@ const Side = styled.aside`
   border-right: 1px solid ${({ theme }) => theme.border};
   display: flex; flex-direction: column; gap: 4px;
 `;
-const Brand = styled.div`
+// Clickable brand: taps back to the public landing page (the sidebar logo doubles
+// as "home"). Paired with the explicit Back control in the top bar below.
+const Brand = styled.a`
   display: flex; align-items: center; gap: 9px; padding: 0 8px 18px;
+  text-decoration: none; color: inherit; cursor: pointer;
+  transition: opacity 0.15s ease; &:hover { opacity: 0.7; }
   .logo { width: 26px; height: 26px; border-radius: 7px; background: ${({ theme }) => theme.accent}; display: flex; align-items: center; justify-content: center; }
   .name { font-size: 15px; font-weight: 700; }
+  .beta { margin-left: 1px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; color: ${({ theme }) => theme.accent}; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; }
+`;
+const Back = styled.a`
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; text-decoration: none;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface}; color: ${({ theme }) => theme.textMuted};
+  transition: color 0.15s ease, border-color 0.15s ease;
+  &:hover { color: ${({ theme }) => theme.text}; border-color: ${({ theme }) => theme.textMuted}; }
 `;
 const Nav = styled.button<{ $on: boolean }>`
   display: flex; align-items: center; justify-content: space-between;
@@ -142,11 +155,12 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
   return (
     <Shell>
       <Side>
-        <Brand>
+        <Brand href="/" title="Back to site">
           <span className="logo" aria-hidden="true">
             <svg width="15" height="15" viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11L10 22L19.5 10H13L13 2Z" fill={theme.accentText} /></svg>
           </span>
           <span className="name">Settl</span>
+          <span className="beta">Pre-beta</span>
         </Brand>
         {tabs.map((t) => (
           <Nav key={t.key} $on={tab === t.key} onClick={() => go(t.key)}>
@@ -161,7 +175,10 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
       </Side>
       <Main>
         <Top>
-          <span className="ws">{workspaceLabel}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <Back href="/">&larr; Back to site</Back>
+            <span className="ws">{workspaceLabel}</span>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             {scaleLabel && <span className="scale">{scaleLabel}</span>}
             <Toggle onClick={onToggleTheme}>{themeMode === "dark" ? "Light" : "Dark"}</Toggle>
