@@ -6,6 +6,7 @@ import type {
   ActivityEntry,
   ApproveResponse,
   BoardResponse,
+  CheckInboundMailResponse,
   CheckPaymentsResponse,
   CsvImportResponse,
   FlagRequest,
@@ -15,6 +16,10 @@ import type {
   ManualEntryResponse,
   ManualInvoiceBody,
   Metrics,
+  PaymentPlanAutonomy,
+  PaymentPlanDecisionResponse,
+  PaymentPlanTemplateInput,
+  PaymentPlanView,
   TraceEntry,
 } from "./types";
 
@@ -68,6 +73,68 @@ export const approveInvoice = (id: string, message?: string) =>
 // Poll the engine for Stripe payments; it auto-reconciles any that were paid.
 export const checkPayments = () =>
   getJSON<CheckPaymentsResponse>("/api/check-payments", { method: "POST" });
+
+// Poll Gmail for new debtor replies across every tenant in view. On-demand version
+// of the ~2min scheduled poller, so a reply shows up without a manual page refresh.
+export const checkInboundMail = (mode: BoardMode = "demo") =>
+  getJSON<CheckInboundMailResponse>(`/api/check-inbound-mail?view=${mode}`, { method: "POST" });
+
+// The offered/active payment plan for an invoice, or null if none exists yet -
+// a 404 is the expected "nothing offered" case, not an error to surface.
+export const getPaymentPlan = async (id: string): Promise<PaymentPlanView | null> => {
+  const res = await fetch(`/api/invoices/${id}/payment-plan`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  return res.json() as Promise<PaymentPlanView>;
+};
+
+// Offer the vendor's pre-approved template (CLAUDE.md: bounded autonomous handling -
+// gathers non-binding terms, never confirmed to the debtor without a vendor decision).
+export const offerPaymentPlan = (id: string) =>
+  getJSON<PaymentPlanView>(`/api/invoices/${id}/payment-plan/offer`, { method: "POST" });
+
+// Vendor-constructed terms, typically after the debtor asked for something
+// different (negotiation_outcome === "wants_different_terms") - amends the same
+// plan in place, still needs the vendor's explicit approve/reject to confirm.
+export const reofferPaymentPlan = (id: string, template: PaymentPlanTemplateInput) =>
+  getJSON<PaymentPlanView>(`/api/invoices/${id}/payment-plan/reoffer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(template),
+  });
+
+// Vendor approve/reject on an offered plan - the only step that can ever confirm
+// terms to the debtor (re-gated server-side on approval).
+export const decidePaymentPlan = (id: string, approved: boolean) =>
+  getJSON<PaymentPlanDecisionResponse>(`/api/invoices/${id}/payment-plan/decide`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ approved }),
+  });
+
+// The signed-in vendor's own payment-plan templates (Profile tab settings).
+export const getPaymentPlanTemplates = () =>
+  getJSON<PaymentPlanTemplateInput[]>("/api/payment-plan-templates");
+
+// Replace the vendor's full set of templates - not a partial patch.
+export const savePaymentPlanTemplates = (templates: PaymentPlanTemplateInput[]) =>
+  getJSON<PaymentPlanTemplateInput[]>("/api/payment-plan-templates", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ templates }),
+  });
+
+// Whether the vendor opted in to letting an explicit approve/reject confirm a
+// payment plan to the debtor - asked at signup, changeable in the Profile tab.
+export const getPaymentPlanAutonomy = () =>
+  getJSON<PaymentPlanAutonomy>("/api/payment-plan-autonomy");
+
+export const setPaymentPlanAutonomy = (enabled: boolean) =>
+  getJSON<PaymentPlanAutonomy>("/api/payment-plan-autonomy", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
 
 // Flag a decision: the engine stores a guardrail and re-orchestrates this invoice.
 // The engine decides the outcome (and refuses waiving a non-waivable rule).

@@ -26,19 +26,14 @@ from __future__ import annotations
 
 from typing import Callable
 
-from settl.agents.drafting import (
-    DraftedMessage,
-    DraftingAgent,
-    ReplyDraftingAgent,
-    build_prompt,
-)
+from settl.agents.drafting import DraftedMessage, DraftingAgent, ReplyDraftingAgent, build_prompt
 from settl.agents.drafting.grounding import StaticVoiceGrounding
 from settl.agents.inbound import ALERT_ONLY_LANES, InboundAgent, InboundLane
 from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
 from settl.compliance.gate import ComplianceResult, GateDecision
-from settl.governance import RuleStore
+from settl.governance import RuleStore, guardrail_violations
 from settl.orchestrator.result import PipelineResult, PipelineStep, TerminalState
 from settl.schema.invoice import Channel, Invoice
 from settl.schema.validation import validate_invoice
@@ -192,6 +187,16 @@ class Orchestrator:
         # 1. Strategy (logs itself).
         decision = self._strategy.decide(invoice)
         steps.append(PipelineStep("strategy", decision.action.value, decision.reasoning))
+
+        if decision.action in (Action.SKIP, Action.HOLD):
+            # ALWAYS_ESCALATE means "a human looks at this no matter what" - unlike
+            # REVIEW/CHASE, these two branches return before ever reaching the gate
+            # where guardrail_violations is normally checked.
+            forced = guardrail_violations(invoice, self._rules_store)
+            if forced:
+                reason = "; ".join(v.message for v in forced)
+                steps.append(PipelineStep("compliance_gate", "escalate", reason))
+                return self._finish(invoice, TerminalState.ESCALATED, steps, reason)
 
         if decision.action is Action.SKIP:
             return self._finish(invoice, TerminalState.SKIPPED, steps, decision.reasoning)

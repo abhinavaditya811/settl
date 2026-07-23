@@ -97,6 +97,25 @@ def test_gmail_sender_requires_credentials_on_pass(monkeypatch):
         sender.send(_invoice(), "hi", PASS, Channel.EMAIL)
 
 
+def test_gmail_sender_reports_withheld_on_transient_smtp_failure(monkeypatch):
+    # Regression: an SMTPServerDisconnected (rate limit, network blip) used to
+    # propagate uncaught straight through send() - and since BoardState.refresh()
+    # runs a live batch at startup, a single flaky send crashed the whole server.
+    import smtplib
+
+    class ExplodingSMTP:
+        def __init__(self, host, port): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, u, p): raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+
+    monkeypatch.setattr("smtplib.SMTP_SSL", ExplodingSMTP)
+    sender = GmailSmtpSender(user="me@gmail.com", app_password="pw")
+    out = sender.send(_invoice(), "hi", PASS, Channel.EMAIL)
+    assert out.sent is False
+    assert "delivery failed" in out.detail
+
+
 def test_gmail_sender_sends_on_pass_with_mocked_smtp(monkeypatch):
     sent = {}
 

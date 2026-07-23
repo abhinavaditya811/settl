@@ -7,7 +7,7 @@ they project the canonical ``Invoice`` + ``PipelineResult`` the engine produced.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StepView(BaseModel):
@@ -48,6 +48,9 @@ class InvoiceDetail(InvoiceCard):
     message: str | None = None  # the gated draft - keeps the {{payment_link}} placeholder
     message_preview: str | None = None  # read-only: placeholder resolved to the real link
     steps: list[StepView] = []
+    # ISO timestamp - when this invoice's tenant mailbox was last polled (scheduled
+    # or manual), None if never. Same source as /health's inbound_poll.last_polled_at.
+    last_inbound_poll_at: str | None = None
 
 
 class BoardSummary(BaseModel):
@@ -191,6 +194,11 @@ class PaymentPlanView(BaseModel):
     template_ref: str | None = None
     offer_count: int
     can_reoffer: bool
+    # The debtor's response to the CURRENT offer, if any (agents/payment_plan/
+    # negotiate.py) - surfaced so the vendor sees it before deciding, not just in
+    # the execution log. Cleared to None on a fresh offer/reoffer.
+    negotiation_outcome: str | None = None  # "accepted" | "wants_different_terms" | None
+    requested_terms: str | None = None
 
 
 class PaymentPlanDecisionBody(BaseModel):
@@ -203,3 +211,17 @@ class PaymentPlanDecisionResponse(BaseModel):
     offer_count: int
     terminal_state: str
     detail: str
+
+
+class PaymentPlanTemplateView(BaseModel):
+    installments: int = Field(ge=1, le=24)  # a sane UI bound; the engine itself has none
+    period_days: int = Field(ge=1, le=365)
+    label: str = ""
+
+
+class PaymentPlanTemplatesBody(BaseModel):
+    templates: list[PaymentPlanTemplateView]
+
+
+class PaymentPlanAutonomyView(BaseModel):
+    enabled: bool

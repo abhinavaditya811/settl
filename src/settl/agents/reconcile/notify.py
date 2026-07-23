@@ -7,6 +7,15 @@ emails the operator when live email is armed - to the account that sent the outr
 (SETTL_SMTP_USER), not the debtor-redirect address. With real per-tenant Gmail this
 becomes the tenant's own From address; when Stripe drives detection, the payment notice
 still lands with whoever sent the reminder.
+
+**Demo-tenant guard.** This is a real, separate email path from the debtor sender
+(sending/email_sender.py), so it needs its OWN demo guard: an invoice belonging to a
+demo/synthetic tenant (``demo_tenant_ids``, injected from api/state.py) never emails a
+notification, unless ``SETTL_LIVE_SEND_DEMO=1`` opts in - and then to the demo-specific
+recipient (SETTL_DEMO_SMTP_USER / SETTL_DEMO_TEST_RECIPIENT) if configured, keeping demo
+reconcile notices out of the inbox used for real testing. Without this, every restart's
+replay of persisted payment events re-fires a batch of "[Settl] Recovered / Needs review"
+emails for the ~25 synthetic seed invoices (an observed spam source).
 """
 
 from __future__ import annotations
@@ -31,10 +40,17 @@ GMAIL_SMTP_SSL_PORT = 465
 class OperatorNotifier:
     """Records (and optionally emails) a 'recovered' notice for the operator."""
 
-    def __init__(self, log: ExecutionLog | None = None, *, email_fn: EmailFn | None = None) -> None:
+    def __init__(
+        self,
+        log: ExecutionLog | None = None,
+        *,
+        email_fn: EmailFn | None = None,
+        demo_tenant_ids: frozenset[str] = frozenset(),
+    ) -> None:
         load_dotenv()
         self._log = log
         self._email_fn = email_fn  # injectable for tests; default built from env
+        self._demo_tenant_ids = demo_tenant_ids
 
     def notify_paid(self, invoice: Invoice, fee: FeeRecord) -> str:
         summary = (
@@ -51,7 +67,7 @@ class OperatorNotifier:
                 recovered_amount=str(fee.recovered_amount),
                 fee_amount=str(fee.fee_amount),
             )
-        self._email(f"[Settl] Recovered - {invoice.invoice_id}", summary)
+        self._email(invoice, f"[Settl] Recovered - {invoice.invoice_id}", summary)
         return summary
 
     def notify_escalation(self, invoice: Invoice, reason: str) -> str:
@@ -66,31 +82,43 @@ class OperatorNotifier:
                 decision="operator_escalated",
                 reasoning=summary,
             )
-        self._email(f"[Settl] Needs review - {invoice.invoice_id}", summary)
+        self._email(invoice, f"[Settl] Needs review - {invoice.invoice_id}", summary)
         return summary
 
-    def _email(self, subject: str, body: str) -> None:
-        fn = self._email_fn or _default_email_fn()
-        if fn is not None:
+    def _email(self, invoice: Invoice, subject: str, body: str) -> None:
+        demo = invoice.tenant_id in self._demo_tenant_ids
+        if demo and os.environ.get("SETTL_LIVE_SEND_DEMO") != "1":
+            return  # demo notification suppressed - the log entry is the record
+        recipient = _recipient(demo)
+        fn = self._email_fn or _default_email_fn(demo)
+        if recipient and fn is not None:
             try:
-                fn(_recipient(), subject, body)
+                fn(recipient, subject, body)
             except Exception:
                 pass  # the notification email is best-effort; the log entry is the record
 
 
-def _recipient() -> str | None:
+def _recipient(demo: bool = False) -> str | None:
     # The operator notification goes to the account that SENT the outreach - the
     # operator's own mailbox (SETTL_SMTP_USER) - NOT the debtor-redirect address.
-    # With real per-tenant Gmail this becomes the tenant's own From address.
+    # A demo notification (only reachable with SETTL_LIVE_SEND_DEMO=1) uses the
+    # demo-specific inbox when configured, so it stays out of the real test inbox.
+    if demo:
+        return os.environ.get("SETTL_DEMO_TEST_RECIPIENT") or os.environ.get("SETTL_SMTP_USER")
     return os.environ.get("SETTL_SMTP_USER")
 
 
-def _default_email_fn() -> EmailFn | None:
-    """Build an SMTP sender only when live email is armed and creds exist; else None."""
+def _default_email_fn(demo: bool = False) -> EmailFn | None:
+    """Build an SMTP sender only when live email is armed and creds exist; else None.
+    A demo notification uses the demo-specific From account when configured."""
     if os.environ.get("SETTL_LIVE_SEND") != "1":
         return None
-    user = os.environ.get("SETTL_SMTP_USER")
-    password = os.environ.get("SETTL_SMTP_APP_PASSWORD")
+    if demo and os.environ.get("SETTL_DEMO_SMTP_USER"):
+        user = os.environ.get("SETTL_DEMO_SMTP_USER")
+        password = os.environ.get("SETTL_DEMO_SMTP_APP_PASSWORD")
+    else:
+        user = os.environ.get("SETTL_SMTP_USER")
+        password = os.environ.get("SETTL_SMTP_APP_PASSWORD")
     if not (user and password):
         return None
 

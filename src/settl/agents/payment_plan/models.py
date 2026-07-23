@@ -59,6 +59,13 @@ class PaymentPlan:
     decided_at: date | None = None
     decided_by: str | None = None
     contact_ref: str | None = None
+    # The debtor's response to THIS offer (agents/payment_plan/negotiate.py) - a
+    # plain string ("accepted" | "wants_different_terms"), not that module's enum,
+    # so this model stays free of a classifier-module dependency. Surfaced to the
+    # vendor before they decide (SCHEMA.md §8: the AI never acts on it itself).
+    # Cleared back to None on a fresh offer/reoffer - see offer.py.
+    negotiation_outcome: str | None = None
+    requested_terms: str | None = None
 
     @property
     def total_amount(self) -> Decimal:

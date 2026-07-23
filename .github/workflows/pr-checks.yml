@@ -12,7 +12,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,api,db]"
+      # gemini extra: tests/test_inbound_model.py mocks the network client but
+      # still exercises real google-genai request-building code (types.Generate-
+      # ContentConfig) - without the package, that import fails and the classifier
+      # silently falls back to the deterministic regex path, masking the mock.
+      - run: pip install -e ".[dev,api,db,gemini]"
       # -m pytest (not bare `pytest`) so the repo root lands on sys.path -
       # tests/test_voice_hooks.py etc import fixtures via `from tests.x import y`.
       - run: python -m pytest -q

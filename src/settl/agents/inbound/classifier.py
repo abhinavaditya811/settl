@@ -20,6 +20,7 @@ from settl.schema.invoice import ContactDirection, Invoice
 class InboundLane(str, Enum):
     BENIGN = "benign"
     DISPUTE = "dispute"
+    OPT_OUT = "opt_out"
     PAYMENT_PLAN_REQUEST = "payment_plan_request"
     ESCALATE_LOW_CONFIDENCE = "escalate_low_confidence"
 
@@ -28,12 +29,14 @@ class InboundLane(str, Enum):
 # is its own lane (agents/payment_plan/) - not alert-only, but not benign-autodraft
 # either; the compliance gate (rule_payment_plan_request) is what actually decides
 # whether it hard-escalates or proceeds to the PaymentPlan flow.
-ALERT_ONLY_LANES = frozenset({InboundLane.DISPUTE, InboundLane.ESCALATE_LOW_CONFIDENCE})
+ALERT_ONLY_LANES = frozenset({InboundLane.DISPUTE, InboundLane.OPT_OUT, InboundLane.ESCALATE_LOW_CONFIDENCE})
 
 # Two or more escalating classifications already in this thread's history counts as
 # "rising friction" even when the current message alone doesn't match a hard trigger -
 # this is the thread-history-aware check SCHEMA.md §7 calls for.
-_FRICTION_LANES = frozenset({InboundLane.DISPUTE.value, InboundLane.ESCALATE_LOW_CONFIDENCE.value})
+_FRICTION_LANES = frozenset({
+    InboundLane.DISPUTE.value, InboundLane.OPT_OUT.value, InboundLane.ESCALATE_LOW_CONFIDENCE.value,
+})
 _FRICTION_THRESHOLD = 2
 
 
@@ -64,6 +67,13 @@ def classify_deterministic(invoice: Invoice, message_text: str) -> InboundClassi
     if P.matches(message_text, P.INBOUND_DISPUTE_RE):
         return InboundClassification(
             InboundLane.DISPUTE, 1.0, "matched dispute language in the reply"
+        )
+    opt_out_hits = P.matches(message_text, P.INBOUND_OPT_OUT_RE)
+    if opt_out_hits:
+        return InboundClassification(
+            InboundLane.OPT_OUT, 1.0,
+            f"debtor asked to stop contact ({', '.join(opt_out_hits)}) - honor the "
+            "opt-out; escalate, never auto-draft a further message",
         )
     if P.matches(message_text, P.INBOUND_PAYMENT_PLAN_RE):
         return InboundClassification(

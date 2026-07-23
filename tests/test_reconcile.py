@@ -97,7 +97,11 @@ def test_fee_is_recorded_at_the_configured_pct():
 # --- the agent: PAID closes the loop, records, notifies -----------------------
 
 
-def test_paid_records_fee_stops_loop_and_notifies():
+def test_paid_records_fee_stops_loop_and_notifies(monkeypatch):
+    # _recipient() reads SETTL_SMTP_USER for who to notify - unset in CI (only
+    # present via a dev .env locally), which would otherwise skip the injected
+    # email_fn entirely regardless of what it's mocked to do.
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
     log = ExecutionLog()
     sent = []
     notifier = OperatorNotifier(log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)))
@@ -112,6 +116,65 @@ def test_paid_records_fee_stops_loop_and_notifies():
     # logged + operator notified
     assert any(e.agent == "reconcile" and e.decision == "paid" for e in log.entries)
     assert any(e.agent == "reconcile_notify" for e in log.entries)
+    assert sent and "INV-R" in sent[0][1]
+
+
+def test_reconcile_notify_false_restores_state_without_emailing():
+    # Regression, observed live: the operator got the same "[Settl] Recovered"
+    # email once per server restart. load_events() replays already-processed
+    # persisted events at startup to restore RECOVERED state - notify=False makes
+    # that replay silent (the email already fired when the payment was first seen).
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)))
+    agent = ReconcileAgent(log=log, success_fee_pct=10.0, notifier=notifier)
+
+    outcome = agent.reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")], notify=False)
+
+    assert outcome.status is ReconcileStatus.PAID  # state still derived correctly
+    assert sent == []  # but no operator email on a replay
+    assert any(e.agent == "reconcile" and e.decision == "paid" for e in log.entries)  # still logged
+
+
+def test_demo_tenant_notification_is_logged_but_not_emailed(monkeypatch):
+    # Regression: the OperatorNotifier is a SEPARATE email path from the debtor
+    # sender - on every restart the replay of persisted payment events re-fired a
+    # batch of "[Settl] Recovered / Needs review" emails for the ~25 synthetic
+    # seed invoices, spamming the operator's own inbox.
+    monkeypatch.delenv("SETTL_LIVE_SEND_DEMO", raising=False)
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_demo"}),
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+    assert sent == []  # no email for a demo tenant
+    assert any(e.agent == "reconcile_notify" for e in log.entries)  # still logged
+
+
+def test_demo_notification_emails_when_opted_in(monkeypatch):
+    monkeypatch.setenv("SETTL_LIVE_SEND_DEMO", "1")
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_demo"}),
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+    assert sent and "INV-R" in sent[0][1]  # opted in - demo notice goes out
+
+
+def test_non_demo_tenant_still_notifies(monkeypatch):
+    monkeypatch.setenv("SETTL_SMTP_USER", "vendor@ourco.test")
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(
+        log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)),
+        demo_tenant_ids=frozenset({"t_other"}),  # t_demo is NOT demo here
+    )
+    ReconcileAgent(log=log, notifier=notifier).reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
     assert sent and "INV-R" in sent[0][1]
 
 

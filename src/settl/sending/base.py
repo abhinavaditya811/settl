@@ -24,6 +24,15 @@ class SendOutcome:
     detail: str
 
 
+class DeliveryFailed(Exception):
+    """Raised by a ``_deliver`` implementation for a transient failure at the
+    channel itself (SMTP disconnect, network blip, provider 5xx) - distinct from
+    ``MissingCredentials``-style misconfiguration, which should still fail loud.
+    ``GatedSender.send`` catches this specifically and reports the invoice as
+    withheld rather than letting one flaky send crash the whole batch (and, at
+    startup, the whole process - see state.py's refresh())."""
+
+
 @runtime_checkable
 class Sender(Protocol):
     def send(
@@ -78,7 +87,18 @@ class GatedSender:
                     ),
                 )
             else:
-                outcome = SendOutcome(sent=True, detail=self._deliver(invoice, resolved, channel))
+                try:
+                    detail = self._deliver(invoice, resolved, channel)
+                except DeliveryFailed as exc:
+                    outcome = SendOutcome(
+                        sent=False,
+                        detail=(
+                            f"WITHHELD {invoice.invoice_id}: delivery failed ({exc}) - "
+                            "not sent; will be retried on the next run."
+                        ),
+                    )
+                else:
+                    outcome = SendOutcome(sent=True, detail=detail)
 
         if self._log is not None:
             self._log.record(

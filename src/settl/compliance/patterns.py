@@ -82,14 +82,21 @@ INBOUND_PAYMENT_PLAN = [
     r"\bspread (out )?the payment",
 ]
 
-# An opt-out / do-not-call request (spoken on a call or written in a reply). Honoring
-# it is immediate and permanent (VOICE_AGENT_SPEC §3a.8) - the registry records it and
-# the gate refuses any later dial.
+# An opt-out / do-not-contact request (spoken on a call or written in a reply, any
+# channel). Honoring it is immediate and permanent (VOICE_AGENT_SPEC §3a.8 for calls;
+# the same posture applies to email/SMS) - the registry records it and the gate
+# refuses any later dial, and the inbound classifier (agents/inbound/classifier.py)
+# escalates rather than auto-drafting a further email.
 INBOUND_OPT_OUT = [
     r"\bstop calling\b",
     r"\bdo ?n[o']t call\b",
     r"\bnever call\b",
     r"\bno more calls\b",
+    r"\bstop emailing\b",
+    r"\bdo ?n[o']t email\b",
+    r"\bno more emails\b",
+    r"\bdo ?n[o']t send (me )?(any )?(more )?emails?\b",
+    r"\bstop send(ing)? (me )?(any )?(more )?emails?\b",
     r"\bremove (me|us|this number)\b",
     r"\btake (me|us) off\b",
     r"\bunsubscribe\b",

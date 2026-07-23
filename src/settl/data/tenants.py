@@ -15,6 +15,8 @@ from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
+from settl.data.supabase.connection import supabase_enabled
+from settl.data.supabase.tenant_config_store import load_policy_overrides
 from settl.tenancy.config import (
     Identity,
     Payments,
@@ -59,5 +61,15 @@ def load_synthetic_tenants() -> dict[str, TenantConfig]:
 
 
 def config_for(tenant_id: str) -> TenantConfig:
-    """The tenant's config, or a bare default-policy config for an unknown tenant."""
-    return load_synthetic_tenants().get(tenant_id, TenantConfig(tenant_id=tenant_id))
+    """The tenant's config: the synthetic demo config when it's a demo tenant;
+    else the durable Supabase policy override (currently just
+    payment_plan_templates - see tenant_config_store.py) layered onto the
+    defaults; else a bare default-policy config."""
+    synthetic = load_synthetic_tenants().get(tenant_id)
+    if synthetic is not None:
+        return synthetic
+    if supabase_enabled():
+        overrides = load_policy_overrides(tenant_id)
+        if overrides:
+            return TenantConfig(tenant_id=tenant_id, policy=policy_with(**_policy_overrides(overrides)))
+    return TenantConfig(tenant_id=tenant_id)

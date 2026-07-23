@@ -24,7 +24,7 @@ from email.message import EmailMessage
 
 from settl.audit.execution_log import ExecutionLog
 from settl.schema.invoice import Channel, Invoice
-from settl.sending.base import GatedSender
+from settl.sending.base import DeliveryFailed, GatedSender
 
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GMAIL_SMTP_SSL_PORT = 465
@@ -72,9 +72,14 @@ class GmailSmtpSender(GatedSender):
         email["Subject"] = f"{self._subject_prefix} - {invoice.invoice_id}"
         email.set_content(message)
 
-        with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, GMAIL_SMTP_SSL_PORT) as smtp:
-            smtp.login(self._user, self._password)
-            smtp.send_message(email)
+        try:
+            with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, GMAIL_SMTP_SSL_PORT) as smtp:
+                smtp.login(self._user, self._password)
+                smtp.send_message(email)
+        except (smtplib.SMTPException, OSError) as exc:
+            # Transient (rate limit, disconnect, DNS blip) - never let this crash
+            # the batch/startup; GatedSender.send() reports it as withheld instead.
+            raise DeliveryFailed(str(exc)) from exc
 
         original = invoice.contact_for(channel) or invoice.debtor_email
         redirected = " (redirected from %s)" % original if (

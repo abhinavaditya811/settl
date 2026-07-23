@@ -54,10 +54,71 @@ def test_check_payments_auto_reconciles_a_paid_link():
         def paid_sessions(self, link_id, currency="usd"):
             return [("pi_test", Decimal("1000000"))]  # >= any invoice amount → PAID
 
-    board._minter = _FakeMinter()
+    board._reconcile._minter = _FakeMinter()
     assert board.check_payments() == [target]
     assert board._results[target].terminal_state is TerminalState.RECOVERED
     assert board.check_payments() == []  # idempotent: already recovered
+
+
+def test_check_inbound_mail_mine_polls_every_demo_tenant_without_a_tenant_id():
+    # No OAuth configured in tests -> a clean, deterministic no-op, but proves the
+    # route is wired and loops the WHOLE view (unlike /check-inbound-mail, which
+    # needs one explicit tenant_id) - the dashboard's auto-poll uses this one.
+    r = client.post("/check-inbound-mail/mine?view=demo")
+    assert r.status_code == 200
+    assert r.json() == {"changed": []}
+
+
+def test_check_inbound_mail_mine_requires_a_session_for_the_mine_view():
+    # Same fail-closed contract as every other board_scope route (test_identity.py) -
+    # a "mine" request with no identity headers 401s rather than silently no-op-ing.
+    r = client.post("/check-inbound-mail/mine?view=mine")
+    assert r.status_code == 401
+
+
+def test_refresh_preserves_an_unresolved_inbound_escalation():
+    # Regression, found live: a debtor's payment-plan-request reply correctly
+    # escalates (handle_inbound), but the very next refresh() - including every
+    # server restart - used to unconditionally overwrite EVERY invoice's result
+    # from a fresh batch run, which has no memory of the reply and recomputes an
+    # ordinary "too soon to re-contact" hold. The escalation vanished with no
+    # trace on the board, silently dropping a debtor's request.
+    from settl.api.state import BoardState
+    from settl.orchestrator.result import PipelineResult, PipelineStep, TerminalState
+
+    board = BoardState()
+    target = next(iter(board._invoices))
+    pending = PipelineResult(
+        invoice_id=target, terminal_state=TerminalState.ESCALATED,
+        steps=[PipelineStep("inbound", "escalated", "Payment-plan request - handled by the PaymentPlan flow")],
+        detail="Payment-plan request - handled by the PaymentPlan flow",
+    )
+    board._results[target] = pending
+
+    board.refresh()
+
+    assert board._results[target] is pending  # NOT clobbered by the routine batch re-run
+
+
+def test_refresh_still_recomputes_an_ordinary_gate_escalation():
+    # The preservation above must be scoped to debtor-triggered (inbound) escalations
+    # only - an ordinary compliance-gate escalation (e.g. first-contact-approval) has
+    # no "inbound" step and should still recompute normally on every refresh.
+    from settl.api.state import BoardState
+    from settl.orchestrator.result import PipelineResult, PipelineStep, TerminalState
+
+    board = BoardState()
+    target = next(iter(board._invoices))
+    stale = PipelineResult(
+        invoice_id=target, terminal_state=TerminalState.ESCALATED,
+        steps=[PipelineStep("compliance_gate", "escalate", "First contact - needs approval")],
+        detail="stale gate escalation, no debtor reply involved",
+    )
+    board._results[target] = stale
+
+    board.refresh()
+
+    assert board._results[target] is not stale  # recomputed fresh, as before this fix
 
 
 def _sent_target(board):
@@ -70,8 +131,8 @@ def _sent_target(board):
 
 def _stub_verify(monkeypatch, event):
     """Skip signature crypto: feed a raw event straight into the real parse_event path."""
-    from settl.api import state as state_mod
-    monkeypatch.setattr(state_mod, "verify_event", lambda payload, sig, secret: event)
+    from settl.api import reconcile_ops as reconcile_ops_mod
+    monkeypatch.setattr(reconcile_ops_mod, "verify_event", lambda payload, sig, secret: event)
 
 
 def test_webhook_recovers_an_invoice_with_no_tab_open(monkeypatch):
@@ -171,6 +232,31 @@ def test_approve_first_contact_sends_then_is_no_longer_approvable():
     # After approval the board reflects SENT and it can't be approved again.
     again = client.post("/invoices/INV-001/approve")
     assert again.status_code == 409
+
+
+def test_approve_records_an_outbound_contact_so_is_new_debtor_flips_false():
+    # Regression: approving a first-contact draft used to never record that a
+    # send happened, so is_new_debtor stayed True forever - a reply minutes
+    # later re-triggered the SAME "first contact" hold as a brand new one
+    # instead of recognizing the debtor as already touched (observed live).
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = next(
+        iid for iid, r in board._results.items()
+        if r.terminal_state is TerminalState.AWAITING_APPROVAL
+    )
+    before = board._invoices[target]
+    assert before.is_new_debtor is True
+
+    new_result = board.approve(target)
+    assert new_result.terminal_state is TerminalState.SENT
+
+    after = board._invoices[target]
+    assert after.is_new_debtor is False
+    assert len(after.prior_contacts) == len(before.prior_contacts) + 1
+    assert after.prior_contacts[-1].direction.value == "outbound"
 
 
 def test_approve_non_approvable_invoice_is_409():

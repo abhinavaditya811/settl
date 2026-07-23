@@ -84,6 +84,20 @@ def test_reoffer_amends_the_same_plan_and_bumps_offer_count():
     assert len(reoffered.installments) == 2  # picked up the new template's shape
 
 
+def test_reoffer_clears_the_prior_negotiation_state():
+    # Regression: a fresh offer supersedes whatever the debtor said about the LAST
+    # one - reoffer() used dataclasses.replace(), which carries over every
+    # unspecified field, including a stale negotiation_outcome/requested_terms.
+    from dataclasses import replace as dc_replace
+
+    inv = _invoice()
+    plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")
+    plan = dc_replace(plan, negotiation_outcome="wants_different_terms", requested_terms="6 months instead")
+    reoffered = reoffer(plan, inv, TEMPLATE_2X15)
+    assert reoffered.negotiation_outcome is None
+    assert reoffered.requested_terms is None
+
+
 def test_offer_count_caps_reoffering_at_the_configured_max():
     inv = _invoice()
     plan = offer_plan(inv, TEMPLATE_3X30, plan_id="pp-1")

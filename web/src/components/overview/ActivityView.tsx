@@ -11,7 +11,9 @@ import { useMemo, useState } from "react";
 import styled, { useTheme } from "styled-components";
 import type { AppTheme } from "@/lib/theme";
 import { useBoard } from "@/lib/BoardContext";
-import { prettyAgent, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
+import { friendlyAgent, headline, cleanReasoning, stepTier } from "@/lib/reasoning";
+import { useTechnicalTrace } from "@/lib/useTechnicalTrace";
 import { TONE } from "@/components/ActivityList";
 
 const Title = styled.h1`font-size: 22px; font-weight: 700; margin: 0;`;
@@ -50,18 +52,27 @@ function dayBucket(iso: string): string {
 export default function ActivityView() {
   const theme = useTheme() as AppTheme;
   const { activity } = useBoard();
+  const [technical, setTechnical] = useTechnicalTrace();
   const [agent, setAgent] = useState("all");
   const [safetyOnly, setSafetyOnly] = useState(false);
 
-  const agents = useMemo(() => Array.from(new Set(activity.map((e) => e.agent))), [activity]);
+  // Clean view shows only the milestones a business owner cares about; the
+  // technical toggle reveals every logged step. Everything downstream (chips,
+  // rows) derives from this base so hidden mechanics never leak into the filters.
+  const base = useMemo(
+    () => activity.filter((e) => technical || stepTier(e.agent, e.decision) === "milestone"),
+    [activity, technical],
+  );
+
+  const agents = useMemo(() => Array.from(new Set(base.map((e) => e.agent))), [base]);
 
   const rows = useMemo(
     () =>
-      activity.filter((e) => {
+      base.filter((e) => {
         const tone = TONE[e.decision] ?? "skipped";
         return (agent === "all" || e.agent === agent) && (!safetyOnly || SAFETY_TONES.has(tone));
       }),
-    [activity, agent, safetyOnly],
+    [base, agent, safetyOnly],
   );
 
   const groups = useMemo(() => {
@@ -84,9 +95,10 @@ export default function ActivityView() {
         <Chips>
           <Chip $on={agent === "all"} onClick={() => setAgent("all")}>All</Chip>
           {agents.map((a) => (
-            <Chip key={a} $on={agent === a} onClick={() => setAgent(a)}>{prettyAgent(a)}</Chip>
+            <Chip key={a} $on={agent === a} onClick={() => setAgent(a)}>{friendlyAgent(a)}</Chip>
           ))}
           <Chip $on={safetyOnly} onClick={() => setSafetyOnly((s) => !s)}>🛡 Safety only</Chip>
+          <Chip $on={technical} onClick={() => setTechnical(!technical)}>⚙ Technical</Chip>
         </Chips>
       )}
 
@@ -102,8 +114,10 @@ export default function ActivityView() {
               <Ev key={`${e.invoice_id}-${i}`}>
                 <span className="dot" style={{ background: theme.status[TONE[e.decision] ?? "skipped"].fg }} />
                 <div>
-                  <div className="a">{prettyAgent(e.agent)}</div>
-                  <div className="l">{e.reasoning}</div>
+                  <div className="a">
+                    {technical ? `${e.agent} · ${e.decision}` : headline(e.agent, e.decision)}
+                  </div>
+                  <div className="l">{technical ? e.reasoning : cleanReasoning(e.reasoning)}</div>
                   <span className="inv">{e.invoice_id} ↗</span>
                 </div>
                 <span className="t">{timeAgo(e.timestamp)}</span>
