@@ -6,13 +6,13 @@
 import { useState } from "react";
 import styled from "styled-components";
 import { motion, AnimatePresence } from "framer-motion";
-import { c, glass, tele, kfPulse, kfScan } from "./palette";
+import { c, glass, tele, kfPulse, kfScan, screen } from "./palette";
 
 const reveal = {
   initial: { opacity: 0, y: 28 }, whileInView: { opacity: 1, y: 0 },
   viewport: { once: true, margin: "-90px" }, transition: { duration: 0.7, ease: [0.22, 0.7, 0.2, 1] },
 } as const;
-const Section = styled(motion.section)`padding: 92px 0 0;`;
+const Section = styled(motion.section)`${screen};`;
 const Kicker = styled.div`${tele}; color: ${c.accent2};`;
 const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 52px); line-height: 1.0; letter-spacing: -0.035em; font-weight: 700; margin: 12px 0 0; max-width: 20ch;`;
 const Lead = styled.p`font-size: 16px; line-height: 1.65; color: ${c.muted}; max-width: 58ch; margin: 16px 0 0;`;

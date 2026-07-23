@@ -9,7 +9,9 @@ import styled from "styled-components";
 import { motion, useScroll, useSpring } from "framer-motion";
 import { c } from "@/components/landing/palette";
 import LivingBackground from "@/components/landing/LivingBackground";
+import Preloader from "@/components/landing/Preloader";
 import Hero from "@/components/landing/Hero";
+import Outcomes from "@/components/landing/Outcomes";
 import InvoiceJourney from "@/components/landing/InvoiceJourney";
 import VoiceHighlight from "@/components/landing/VoiceHighlight";
 import Explainer from "@/components/landing/Explainer";
@@ -52,14 +54,16 @@ export default function LandingPage() {
     <div style={fontVars}>
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link rel="stylesheet" href={HREF} />
+      <Preloader />
       <Canvas>
         <ScrollProgress />
         <LivingBackground />
         <Inner>
           <Hero />
-          <InvoiceJourney />
+          <Outcomes />
           <VoiceHighlight />
           <Explainer />
+          <InvoiceJourney />
           <Showcase />
           <LandingSections />
         </Inner>

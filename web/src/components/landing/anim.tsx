@@ -3,8 +3,18 @@
 // Shared landing motion helpers: a scroll-reveal wrapper and a count-up number
 // that animates the first time it scrolls into view.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { motion, useInView, type HTMLMotionProps } from "framer-motion";
+
+// Shared card hover handler: writes the pointer position into --mx/--my CSS vars so a
+// radial highlight can follow the cursor across the card (see `spotGlow` in palette).
+// One function, reused by every card; pass as onMouseMove.
+export function spotlightMove(e: MouseEvent<HTMLElement>) {
+  const el = e.currentTarget;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  el.style.setProperty("--my", `${e.clientY - r.top}px`);
+}
 
 export function Reveal({ delay = 0, children, ...rest }: HTMLMotionProps<"div"> & { delay?: number }) {
   return (

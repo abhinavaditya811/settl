@@ -44,3 +44,28 @@ export const tele = css`
   text-transform: uppercase;
   color: ${c.faint};
 `;
+
+// Standard vertical rhythm between major landing sections. Sections are sized to
+// their content (never stretched to the viewport) — dense and intentional beats big
+// empty screens. Tune the single value here to re-pace the whole page at once.
+export const screen = css`
+  padding: 104px 0 0;
+`;
+
+// Card cursor-glow: a soft radial highlight that follows the pointer across the card
+// (pair with spotlightMove() from anim as onMouseMove). Uses ::after so it composes
+// with a card's own ::before; --mx/--my default to the top-center before first move.
+export const spotGlow = css`
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0%), rgba(155, 140, 255, 0.16), transparent 55%);
+  }
+  &:hover::after { opacity: 1; }
+`;

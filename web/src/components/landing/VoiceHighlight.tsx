@@ -7,8 +7,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
-import { c, glass, tele } from "./palette";
-import { Reveal } from "./anim";
+import { c, glass, tele, screen, spotGlow } from "./palette";
+import { Reveal, spotlightMove } from "./anim";
 
 // Plays the REAL agent voice from /agent-voice.mp3 (drop the actual recording there,
 // see the note in the page). Until that file exists it falls back to the browser's
@@ -22,7 +22,7 @@ const SAMPLE = "Hi, this is an AI assistant calling on behalf of Brightline Stud
 const wave = keyframes`0%,100%{transform:scaleY(0.35)}50%{transform:scaleY(1)}`;
 const ring = keyframes`0%{box-shadow:0 0 0 0 rgba(70,211,154,.45)}70%,100%{box-shadow:0 0 0 14px rgba(70,211,154,0)}`;
 
-const Section = styled.section`padding: 100px 0 0;`;
+const Section = styled.section`${screen};`;
 const Kicker = styled.div`${tele}; color: ${c.ok};`;
 const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 54px); line-height: 1.0; letter-spacing: -0.038em; font-weight: 700; margin: 12px 0 0; max-width: 20ch;`;
 const Lead = styled.p`font-size: 16px; line-height: 1.65; color: ${c.muted}; max-width: 56ch; margin: 16px 0 0; b { color: ${c.ink}; font-weight: 600; }`;
@@ -33,12 +33,14 @@ const Grid = styled.div`
 `;
 const Points = styled.div`display: flex; flex-direction: column; gap: 14px;`;
 const Point = styled.div`
-  ${glass}; border-radius: 13px; padding: 15px 18px; display: flex; gap: 13px; align-items: flex-start;
+  ${glass}; ${spotGlow}; border-radius: 13px; padding: 16px 18px; display: flex; gap: 13px; align-items: flex-start;
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+  &:hover { transform: translateY(-4px); border-color: rgba(70,211,154,0.45); box-shadow: 0 16px 38px rgba(0,0,0,0.3); }
   .ic { color: ${c.ok}; font-family: ${c.mono}; font-size: 13px; margin-top: 1px; }
   .t { font-size: 14.5px; color: ${c.ink}; line-height: 1.5; b { font-weight: 600; } }
 `;
 
-const Call = styled.div`${glass}; border-radius: 20px; padding: 26px; position: relative; overflow: hidden;`;
+const Call = styled.div`${glass}; ${spotGlow}; border-radius: 20px; padding: 26px;`;
 const CHead = styled.div`
   display: flex; align-items: center; gap: 13px; padding-bottom: 18px; border-bottom: 1px solid ${c.line};
   .av { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; background: linear-gradient(135deg, ${c.accent2}, ${c.accent}); animation: ${ring} 2.2s ease-out infinite; }
@@ -100,14 +102,14 @@ export default function VoiceHighlight() {
       <Grid>
         <Reveal delay={0.05}>
           <Points>
-            <Point><span className="ic">01</span><span className="t"><b>Discloses it&apos;s AI</b> the moment the call opens. Always. For every voice.</span></Point>
-            <Point><span className="ic">02</span><span className="t"><b>Only calls with consent</b>, inside allowed hours, B2B only. Says &quot;stop&quot; once and it never calls again.</span></Point>
-            <Point><span className="ic">03</span><span className="t"><b>Never takes payment on the call.</b> It texts your link. Money only ever moves through your processor.</span></Point>
-            <Point><span className="ic">04</span><span className="t"><b>The same hard gate</b> clears every call before it dials, exactly like an email.</span></Point>
+            <Point onMouseMove={spotlightMove}><span className="ic">01</span><span className="t"><b>Discloses it&apos;s AI</b> the moment the call opens. Always. For every voice.</span></Point>
+            <Point onMouseMove={spotlightMove}><span className="ic">02</span><span className="t"><b>Only calls with consent</b>, inside allowed hours, B2B only. Says &quot;stop&quot; once and it never calls again.</span></Point>
+            <Point onMouseMove={spotlightMove}><span className="ic">03</span><span className="t"><b>Never takes payment on the call.</b> It texts your link. Money only ever moves through your processor.</span></Point>
+            <Point onMouseMove={spotlightMove}><span className="ic">04</span><span className="t"><b>The same hard gate</b> clears every call before it dials, exactly like an email.</span></Point>
           </Points>
         </Reveal>
         <Reveal delay={0.12}>
-          <Call>
+          <Call onMouseMove={spotlightMove}>
             <CHead>
               <span className="av" aria-hidden="true">📞</span>
               <div>

@@ -43,7 +43,7 @@ const Ghost = styled.div`
 const Kicker = styled.div`${tele}; color: ${c.accent2}; text-align: center; margin-bottom: 30px;`;
 const Grid = styled.div`
   position: relative; z-index: 1;
-  display: grid; grid-template-columns: 250px 1fr; gap: 56px; align-items: center; max-width: 1000px; margin: 0 auto; width: 100%;
+  display: grid; grid-template-columns: 210px 1fr; gap: 52px; align-items: center; max-width: 1160px; margin: 0 auto; width: 100%;
   @media (max-width: 760px) { grid-template-columns: 1fr; gap: 30px; }
 `;
 
@@ -58,12 +58,15 @@ const RailItem = styled.div<{ $on: boolean }>`
   .l { font-family: ${c.display}; font-size: 14px; font-weight: 600; }
 `;
 
-const Right = styled.div``;
-const Head = styled.div`font-family: ${c.display}; font-size: clamp(34px, 5.2vw, 60px); font-weight: 700; letter-spacing: -0.04em; line-height: 1.0; color: ${c.ink};`;
+const Right = styled.div`
+  display: grid; grid-template-columns: 1fr minmax(340px, 440px); gap: 48px; align-items: center;
+  @media (max-width: 900px) { grid-template-columns: 1fr; gap: 26px; }
+`;
+const Head = styled.div`font-family: ${c.display}; font-size: clamp(32px, 4.6vw, 54px); font-weight: 700; letter-spacing: -0.04em; line-height: 1.02; color: ${c.ink};`;
 const Desc = styled.div`font-size: 17px; line-height: 1.6; color: ${c.muted}; margin-top: 16px; max-width: 48ch; min-height: 82px;`;
 
 const Card = styled(motion.div)<{ $fg: string }>`
-  ${glass}; border-radius: 18px; padding: 26px 28px; margin-top: 30px; max-width: 470px;
+  ${glass}; border-radius: 18px; padding: 26px 28px; width: 100%;
   border-color: ${({ $fg }) => $fg}55; box-shadow: 0 24px 60px rgba(0,0,0,0.45), 0 0 46px ${({ $fg }) => $fg}22;
   transition: border-color 0.5s ease, box-shadow 0.5s ease;
   .row { display: flex; align-items: center; justify-content: space-between; }
@@ -101,14 +104,16 @@ export default function InvoiceJourney() {
           </Rail>
 
           <Right>
-            <AnimatePresence mode="wait">
-              <motion.div key={s.key}
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
-                transition={{ duration: 0.35, ease: [0.22, 0.7, 0.2, 1] }}>
-                <Head>{s.head}</Head>
-                <Desc>{s.desc}</Desc>
-              </motion.div>
-            </AnimatePresence>
+            <div>
+              <AnimatePresence mode="wait">
+                <motion.div key={s.key}
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.35, ease: [0.22, 0.7, 0.2, 1] }}>
+                  <Head>{s.head}</Head>
+                  <Desc>{s.desc}</Desc>
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
             <Card $fg={s.fg}>
               <div className="row">
