@@ -34,13 +34,14 @@ const Nav = styled(motion.nav)`
     &:hover::after { transform: scaleX(1); } }
   .actions { display: flex; align-items: center; gap: 8px; }
 `;
-const Cta = styled.button<{ $primary?: boolean }>`
-  font-size: 13.5px; padding: 9px 16px; border-radius: 9px; cursor: pointer; font-weight: 600; font-family: ${c.body};
+const Cta = styled.button<{ $primary?: boolean; $big?: boolean }>`
+  font-size: ${({ $big }) => ($big ? "15.5px" : "13.5px")}; padding: ${({ $big }) => ($big ? "14px 28px" : "9px 16px")}; border-radius: ${({ $big }) => ($big ? "12px" : "9px")}; cursor: pointer; font-weight: 600; font-family: ${c.body};
   border: 1px solid ${({ $primary }) => ($primary ? "transparent" : c.glassBorder)};
   background: ${({ $primary }) => ($primary ? c.accent : "rgba(255,255,255,0.04)")};
   color: ${c.ink}; box-shadow: ${({ $primary }) => ($primary ? "0 0 26px rgba(109,94,246,.5)" : "none")};
-  transition: filter 0.2s ease, box-shadow 0.2s ease;
-  &:hover { filter: brightness(1.08); box-shadow: ${({ $primary }) => ($primary ? "0 0 40px rgba(109,94,246,.7)" : "0 0 22px rgba(155,140,255,.25)")}; }
+  transition: filter 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  &:hover { filter: brightness(1.08); transform: translateY(-2px); box-shadow: ${({ $primary }) => ($primary ? "0 0 44px rgba(109,94,246,.75)" : "0 0 24px rgba(155,140,255,.3)")}; }
+  &:active { transform: translateY(0); }
 `;
 const Hero = styled.section`position: relative; text-align: center; padding: 70px 0 8px; z-index: 1;`;
 const Aurora = styled.div`
@@ -181,7 +182,7 @@ export default function HeroSection() {
           <motion.div variants={cont} initial="hidden" animate="show">
             <motion.div variants={item}><Eyebrow>// autonomous AR engine · AI invoice collections</Eyebrow></motion.div>
             <motion.div variants={item}><H1>Get your overdue invoices paid, <span className="shine">automatically.</span></H1></motion.div>
-            <motion.div variants={item}><Sub>Settl is an autonomous agent for B2B receivables. It decides when and how to chase every overdue invoice, drafts the message in your voice, and clears a hard compliance gate before anything goes out. You only approve the first one.</Sub></motion.div>
+            <motion.div variants={item}><Sub>Settl chases your overdue invoices for you. It writes each reminder in your voice, clears a strict compliance gate, and only asks you to approve the first one.</Sub></motion.div>
             <motion.div variants={item}>
               <Metrics>
                 <Chip><b>31 → 19</b><span>days to pay</span></Chip>
@@ -190,8 +191,8 @@ export default function HeroSection() {
               </Metrics>
             </motion.div>
             <motion.div variants={item}><Row>
-              <Magnetic><Cta $primary onClick={open}>Open your dashboard</Cta></Magnetic>
-              <Magnetic><Cta onClick={demo}>See it work →</Cta></Magnetic>
+              <Magnetic><Cta $big $primary onClick={open}>Open your dashboard</Cta></Magnetic>
+              <Magnetic><Cta $big onClick={demo}>See it work →</Cta></Magnetic>
             </Row></motion.div>
             <motion.div variants={item}><Trust>B2B only · never custodial · paid through your own processor</Trust></motion.div>
           </motion.div>
