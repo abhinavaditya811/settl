@@ -26,8 +26,14 @@ from __future__ import annotations
 
 from typing import Callable
 
-from settl.agents.drafting import DraftedMessage, DraftingAgent, build_prompt
+from settl.agents.drafting import (
+    DraftedMessage,
+    DraftingAgent,
+    ReplyDraftingAgent,
+    build_prompt,
+)
 from settl.agents.drafting.grounding import StaticVoiceGrounding
+from settl.agents.inbound import ALERT_ONLY_LANES, InboundAgent, InboundLane
 from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
@@ -75,6 +81,8 @@ class Orchestrator:
         drafter: DraftingAgent | None = None,
         draft_fn: Drafter | None = None,
         rules_store: RuleStore | None = None,
+        inbound_agent: InboundAgent | None = None,
+        reply_drafter: ReplyDraftingAgent | None = None,
     ) -> None:
         self._log = log
         self._config = config
@@ -92,6 +100,11 @@ class Orchestrator:
         # ``draft_fn`` can still be injected to stand in for it.
         self._drafter = drafter or self._default_drafter(log, config)
         self._draft_fn = draft_fn or self._drafter.draft
+        # Inbound reply handling (SCHEMA.md §7) - separate from the chase drafter
+        # above since replying responds to the debtor's own words, not a strategy
+        # decision. Voice grounding is shared with the chase drafter's config.
+        self._inbound_agent = inbound_agent or InboundAgent(log=log)
+        self._reply_drafter = reply_drafter or self._default_reply_drafter(log, config)
 
     @staticmethod
     def _default_strategy(
@@ -143,6 +156,16 @@ class Orchestrator:
         if config is None or not config.voice.voice_block.strip():
             return DraftingAgent(log=log)
         return DraftingAgent(
+            log=log, grounding=StaticVoiceGrounding(config.voice.voice_block)
+        )
+
+    @staticmethod
+    def _default_reply_drafter(
+        log: ExecutionLog | None, config: TenantConfig | None
+    ) -> ReplyDraftingAgent:
+        if config is None or not config.voice.voice_block.strip():
+            return ReplyDraftingAgent(log=log)
+        return ReplyDraftingAgent(
             log=log, grounding=StaticVoiceGrounding(config.voice.voice_block)
         )
 
@@ -246,12 +269,66 @@ class Orchestrator:
         message = drafted.text if isinstance(drafted, DraftedMessage) else str(drafted)
         source = drafted.source if isinstance(drafted, DraftedMessage) else "template"
         steps.append(PipelineStep("drafting", source, "candidate drafted for the gate"))
-        channel = decision.channel.value if decision.channel else None
-
         # The gate is the only authority that clears a send - and it's channel-aware,
         # so a voice CHASE runs the voice rules (fail-safe: no VoiceContext yet →
         # escalate). Email/SMS are unaffected (voice rules are guarded by channel).
-        result = self._gate.evaluate(invoice, message, channel=decision.channel)
+        return self._gate_and_send(invoice, message, decision.channel, steps)
+
+    # -- inbound path (SCHEMA.md §7) -------------------------------------------
+
+    def handle_inbound(self, invoice: Invoice, message_text: str) -> PipelineResult:
+        """One inbound debtor reply → classify → lane-route.
+
+        Alert-only lanes (dispute, low-confidence, and payment-plan-request until
+        the PaymentPlan flow lands) never draft or send - just escalate. A BENIGN
+        reply drafts and gates exactly like a chase message; FIRST_CONTACT_APPROVAL
+        behaves identically either way (rule_first_contact reads the same
+        ``is_new_debtor`` signal), so no separate approval logic is needed here -
+        the gate already enforces "first touch needs approval, later touches don't"
+        for a reply the same as for an AI-initiated chase.
+
+        Pure coordination, same as the rest of this file - no Supabase writes here.
+        The caller (the inbound edge, SCHEMA.md §7) is responsible for persisting
+        both the inbound message and any outbound reply as ``contacts`` rows
+        (data/supabase/contacts_store.py::write_contact) before/after calling this,
+        including ``classification=classification.lane.value`` on the inbound row so
+        later calls see this thread's history.
+        """
+        classification = self._inbound_agent.classify(invoice, message_text)
+        steps = [
+            PipelineStep(
+                "inbound_classifier", classification.lane.value, classification.reasoning
+            )
+        ]
+
+        if classification.lane in ALERT_ONLY_LANES or (
+            classification.lane is InboundLane.PAYMENT_PLAN_REQUEST
+        ):
+            reason = classification.reasoning
+            if classification.lane is InboundLane.PAYMENT_PLAN_REQUEST:
+                reason = (
+                    "Payment-plan request - handled by the PaymentPlan flow "
+                    "(not yet wired here), never an auto-drafted reply."
+                )
+            self._record(invoice, "inbound", "escalated", reason)
+            steps.append(PipelineStep("inbound", "escalated", reason))
+            return self._finish(invoice, TerminalState.ESCALATED, steps, reason)
+
+        drafted = self._reply_drafter.draft(invoice, message_text)
+        steps.append(PipelineStep("drafting", drafted.source, "reply drafted for the gate"))
+        return self._gate_and_send(invoice, drafted.text, Channel.EMAIL, steps)
+
+    # -- shared gate → send tail ------------------------------------------------
+
+    def _gate_and_send(
+        self,
+        invoice: Invoice,
+        message: str,
+        channel: Channel | None,
+        steps: list[PipelineStep],
+    ) -> PipelineResult:
+        channel_value = channel.value if channel else None
+        result = self._gate.evaluate(invoice, message, channel=channel)
         steps.append(PipelineStep("compliance_gate", result.decision.value, result.reasoning))
 
         if not result.passed:
@@ -265,29 +342,29 @@ class Orchestrator:
                 steps.append(PipelineStep("human_approval", "awaiting_approval", reason))
                 return self._finish(
                     invoice, TerminalState.AWAITING_APPROVAL, steps, reason,
-                    message=message, channel=channel,
+                    message=message, channel=channel_value,
                 )
             # Defensive backstop: the sender refuses and logs the withhold too.
-            outcome = self._sender.send(invoice, message, result, decision.channel)
+            outcome = self._sender.send(invoice, message, result, channel)
             steps.append(PipelineStep("sender", "withheld", outcome.detail))
             return self._finish(
                 invoice, TerminalState.ESCALATED, steps,
-                ",".join(result.codes), message=message, channel=channel,
+                ",".join(result.codes), message=message, channel=channel_value,
             )
 
-        outcome = self._sender.send(invoice, message, result, decision.channel)
+        outcome = self._sender.send(invoice, message, result, channel)
         if not outcome.sent:
             # Gate passed, but the sender withheld (e.g. no resolvable payment link).
             # Never report SENT for a message that didn't go out - route to a human.
             steps.append(PipelineStep("sender", "withheld", outcome.detail))
             return self._finish(
                 invoice, TerminalState.ESCALATED, steps, outcome.detail,
-                message=message, channel=channel,
+                message=message, channel=channel_value,
             )
         steps.append(PipelineStep("sender", "sent", outcome.detail))
         return self._finish(
             invoice, TerminalState.SENT, steps, "clean -> sent",
-            message=message, channel=channel,
+            message=message, channel=channel_value,
         )
 
     # -- helpers --------------------------------------------------------------

@@ -99,3 +99,53 @@ def test_every_invoice_has_an_audit_trail():
     for inv_id in results:
         assert log.for_invoice(inv_id), f"no audit trail for {inv_id}"
     assert log.to_json().startswith("[")
+
+
+# --- inbound (SCHEMA.md §7) -----------------------------------------------------
+
+
+def _invoice(inv_id: str):
+    return {i.invoice_id: i for i in load_synthetic_invoices()}[inv_id]
+
+
+def test_handle_inbound_dispute_escalates_without_drafting():
+    orch = Orchestrator(log=ExecutionLog())
+    result = orch.handle_inbound(_invoice("INV-018"), "I dispute this, never ordered it")
+    assert result.terminal_state is TerminalState.ESCALATED
+    assert result.message is None  # alert-only lane never drafts
+
+
+def test_handle_inbound_payment_plan_request_escalates_without_drafting():
+    orch = Orchestrator(log=ExecutionLog())
+    result = orch.handle_inbound(_invoice("INV-018"), "Can we set up a payment plan?")
+    assert result.terminal_state is TerminalState.ESCALATED
+    assert result.message is None
+
+
+def test_handle_inbound_benign_reply_on_repeat_debtor_autosends():
+    # INV-018 is a repeat payer (is_new_debtor is False) - first-contact approval
+    # already cleared on an earlier touch, so a benign reply auto-sends, mirroring
+    # the chase path's first-touch-then-autonomous rule.
+    orch = Orchestrator(log=ExecutionLog())
+    result = orch.handle_inbound(_invoice("INV-018"), "Thanks, will take care of it")
+    assert result.terminal_state is TerminalState.SENT
+    assert result.message is not None
+
+
+def test_handle_inbound_benign_reply_on_new_debtor_awaits_approval():
+    # INV-001 has no prior outbound touch (is_new_debtor True) - even though the
+    # reply itself is benign, FIRST_CONTACT_APPROVAL still applies exactly as it
+    # would for an AI-initiated first touch.
+    orch = Orchestrator(log=ExecutionLog())
+    result = orch.handle_inbound(_invoice("INV-001"), "Thanks, will take care of it")
+    assert result.terminal_state is TerminalState.AWAITING_APPROVAL
+    assert result.message is not None
+
+
+def test_handle_inbound_logs_the_classification():
+    log = ExecutionLog()
+    orch = Orchestrator(log=log)
+    inv = _invoice("INV-018")
+    orch.handle_inbound(inv, "I dispute this charge")
+    entries = log.for_invoice(inv.invoice_id)
+    assert any(e.agent == "inbound_classifier" and e.decision == "dispute" for e in entries)
