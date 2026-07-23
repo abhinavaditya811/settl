@@ -11,17 +11,23 @@ dependencies = ["pydantic>=2.6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
-api = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
-gemini = ["google-genai>=1.0"]
-stripe = ["stripe>=9.0"]
-db = ["psycopg[binary]>=3.1"]
-gmail = [
-    "mcp[cli]>=1.0,<2.0",
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    # The Gmail edge (OAuth routes, token_crypto, the REST client, the MCP server)
+    # is a first-class part of the API surface, so its libraries live here rather
+    # than in a separate optional extra - `pip install .[api]` (and CI) then gets a
+    # full, testable import graph. cryptography/google-auth are imported at load
+    # time; requests/mcp are lazy-imported, but their tests still run in CI.
     "google-auth>=2.30",
     "google-auth-oauthlib>=1.2",
     "cryptography>=42.0",
     "requests>=2.31",
+    "mcp[cli]>=1.0,<2.0",
 ]
+gemini = ["google-genai>=1.0"]
+stripe = ["stripe>=9.0"]
+db = ["psycopg[binary]>=3.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
