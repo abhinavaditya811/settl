@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import { AnimatePresence, motion } from "framer-motion";
 import { LedgerIcon } from "./LedgerIcons";
-import ProductConsolePreview, { CONSOLE_DATA, type ConsoleTabKey } from "./ProductConsolePreview";
+import ProductConsolePreview, {
+  CONSOLE_DATA,
+  CONSOLE_TABS,
+  type ConsoleTabKey,
+} from "./ProductConsolePreview";
+import { playLandingTone } from "./useLandingAudio";
+import { setLandingHash } from "./LandingChrome";
 
 const dark = "#111214";
 const paper = "#f1ecdf";
@@ -104,27 +110,25 @@ const PrincipleStrip = styled.div`
 const Console = styled.div`
   width: min(1180px, calc(100% - 52px));
   margin: 54px auto 0;
-  border: 1px solid #c6beaf;
-  border-radius: 24px;
-  background: #fbf7ed;
-  box-shadow: 0 50px 120px rgba(47, 39, 25, 0.14);
+  border: 1px solid #2a2d33;
+  border-radius: 18px;
+  background: #0f1114;
+  color: #e5e7eb;
+  box-shadow: 0 50px 120px rgba(17, 18, 20, 0.28);
   overflow: hidden;
   @media (max-width: 760px) {
     width: calc(100% - 34px);
   }
 `;
 const ConsoleTop = styled.div`
-  height: 56px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid #d9d1c4;
-  font: 500 9px var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #777067;
-  background: linear-gradient(180deg, #fffdf8, #f7f1e5);
+  padding: 0 16px;
+  border-bottom: 1px solid #24272d;
+  font: 500 10px var(--font-body);
+  color: #8b9099;
   .live {
     display: flex;
     align-items: center;
@@ -137,130 +141,169 @@ const ConsoleTop = styled.div`
     background: ${mint};
     animation: ${pulse} 1.6s ease infinite;
   }
+  .pill {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #343842;
+    font: 600 8px var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
 `;
 const ProductGrid = styled.div`
   display: grid;
-  grid-template-columns: 240px 1fr;
-  min-height: 520px;
+  grid-template-columns: 212px 1fr;
+  min-height: 540px;
   @media (max-width: 760px) {
     grid-template-columns: 1fr;
   }
 `;
-const Tabs = styled.div`
-  padding: 14px;
-  border-right: 1px solid #d9d1c4;
-  background: #f4efe3;
+const Side = styled.div`
+  padding: 16px 12px;
+  border-right: 1px solid #24272d;
+  background: #121418;
   @media (max-width: 760px) {
     display: flex;
     overflow: auto;
     border-right: 0;
-    border-bottom: 1px solid #d9d1c4;
+    border-bottom: 1px solid #24272d;
+    padding-bottom: 10px;
+  }
+`;
+const Brand = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 16px;
+  .logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: ${violet};
+    display: grid;
+    place-items: center;
+    color: #fff;
+  }
+  .logo svg {
+    width: 14px;
+  }
+  .name {
+    font: 700 14px var(--font-body);
+  }
+  .beta {
+    font: 700 8px var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: ${violet};
+    background: #1c1f27;
+    border: 1px solid #343842;
+  }
+  @media (max-width: 760px) {
+    display: none;
   }
 `;
 const Tab = styled.button<{ $on: boolean }>`
-  position: relative;
   width: 100%;
-  padding: 14px 14px 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
   border: 0;
-  border-radius: 12px;
-  background: ${({ $on }) => ($on ? "#fffdf7" : "transparent")};
-  color: ${({ $on }) => ($on ? dark : "#777067")};
-  text-align: left;
-  cursor: pointer;
+  border-radius: 9px;
   margin-bottom: 4px;
-  box-shadow: ${({ $on }) => ($on ? "0 10px 24px rgba(61,48,31,.08)" : "none")};
-  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  text-align: left;
+  background: ${({ $on }) => ($on ? "#1c1f27" : "transparent")};
+  color: ${({ $on }) => ($on ? violet : "#8b9099")};
+  font: ${({ $on }) => ($on ? 700 : 400)} 13px var(--font-body);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
   &:hover {
-    background: #fffdf7;
+    background: #1c1f27;
+    color: #e5e7eb;
     transform: translateX(2px);
   }
-  .l {
-    font: 600 13px var(--font-display);
-  }
-  .s {
-    font: 400 10px var(--font-body);
-    color: #8a8378;
-    margin-top: 3px;
+  .badge {
+    font: 700 10px var(--font-mono);
+    padding: 1px 7px;
+    border-radius: 999px;
+    color: #f0b45a;
+    background: rgba(240, 180, 90, 0.14);
   }
   @media (max-width: 760px) {
     width: auto;
-    min-width: 140px;
+    min-width: 120px;
     margin: 0 4px 0 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
-`;
-const Indicator = styled(motion.span)`
-  position: absolute;
-  left: 5px;
-  top: 14px;
-  bottom: 14px;
-  width: 2px;
-  background: ${violet};
-  border-radius: 2px;
 `;
 const View = styled.div`
-  padding: 34px;
+  padding: 22px 24px 28px;
   background:
-    radial-gradient(520px 240px at 100% 0%, rgba(116, 102, 242, 0.08), transparent 60%),
-    #fffdf7;
+    radial-gradient(480px 220px at 100% 0%, rgba(116, 102, 242, 0.12), transparent 60%),
+    #0f1114;
   @media (max-width: 600px) {
-    padding: 22px 16px;
+    padding: 18px 14px;
   }
   .label {
-    font: 500 9px var(--font-mono);
-    letter-spacing: 0.09em;
+    font: 600 10px var(--font-mono);
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: ${violet};
   }
   h3 {
-    font: 600 34px var(--font-display);
+    font: 700 28px var(--font-display);
     letter-spacing: -0.04em;
-    margin: 10px 0 6px;
+    margin: 8px 0 6px;
+    color: #f3f4f6;
   }
   .desc {
     font: 400 13px / 1.55 var(--font-body);
-    color: #777067;
-    max-width: 52ch;
+    color: #8b9099;
+    max-width: 54ch;
+  }
+  .demo {
+    margin-top: 10px;
+    font: 600 9px var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6f747c;
   }
 `;
 const Metrics = styled.div`
-  width: min(1180px, calc(100% - 52px));
-  margin: 70px auto 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border: 1px solid #cfc7ba;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #faf6ec;
-  .metric {
-    padding: 28px 24px;
-    border-right: 1px solid #cfc7ba;
-  }
-  .metric:last-child {
-    border: 0;
-  }
-  .big {
-    font: 600 48px var(--font-display);
-    letter-spacing: -0.05em;
-  }
-  .small {
-    font: 500 9px var(--font-mono);
-    text-transform: uppercase;
-    color: #777067;
-    margin-top: 5px;
-  }
+  width: min(1180px, calc(100% - 52px)); margin: 70px auto 0; display: grid; grid-template-columns: repeat(3, 1fr);
+  border: 1px solid #cfc7ba; border-radius: 18px; overflow: hidden; background: #faf6ec;
+  .metric { padding: 28px 24px; border-right: 1px solid #cfc7ba; }
+  .metric:last-child { border: 0; }
+  .big { font: 600 48px var(--font-display); letter-spacing: -0.05em; }
+  .small { font: 500 9px var(--font-mono); text-transform: uppercase; color: #777067; margin-top: 5px; }
   @media (max-width: 650px) {
-    width: calc(100% - 34px);
-    grid-template-columns: 1fr;
-    .metric {
-      border-right: 0;
-      border-bottom: 1px solid #cfc7ba;
-    }
+    width: calc(100% - 34px); grid-template-columns: 1fr;
+    .metric { border-right: 0; border-bottom: 1px solid #cfc7ba; }
   }
 `;
 
 export default function ProductConsole() {
   const [tab, setTab] = useState<ConsoleTabKey>("overview");
   const data = CONSOLE_DATA[tab];
+
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const next = (e as CustomEvent<{ tab: ConsoleTabKey }>).detail?.tab;
+      if (next && CONSOLE_DATA[next]) setTab(next);
+    };
+    window.addEventListener("settl:console-tab", onTab);
+    return () => window.removeEventListener("settl:console-tab", onTab);
+  }, []);
+
+  const select = (key: ConsoleTabKey) => {
+    setTab(key);
+    setLandingHash(key);
+    playLandingTone("click");
+  };
 
   return (
     <Product id="console">
@@ -288,25 +331,42 @@ export default function ProductConsole() {
       </PrincipleStrip>
       <Console>
         <ConsoleTop>
-          <span className="live"><span className="dot" />settl recovery console</span>
-          <span>engine active · gate armed</span>
+          <span className="live"><span className="dot" />Demo workspace · synthetic data</span>
+          <span className="pill">3 invoices · 3 customers</span>
         </ConsoleTop>
         <ProductGrid>
-          <Tabs role="tablist">
-            {(Object.keys(CONSOLE_DATA) as ConsoleTabKey[]).map((key) => (
-              <Tab role="tab" aria-selected={key === tab} $on={key === tab} onClick={() => setTab(key)} key={key}>
-                {key === tab && <Indicator layoutId="proof-tab" />}
-                <div className="l">{key[0].toUpperCase() + key.slice(1)}</div>
-                <div className="s">{CONSOLE_DATA[key].sub}</div>
+          <Side role="tablist" aria-label="Board tabs">
+            <Brand>
+              <span className="logo" aria-hidden="true"><LedgerIcon name="reconcile" /></span>
+              <span className="name">Settl</span>
+              <span className="beta">Pre-beta</span>
+            </Brand>
+            {CONSOLE_TABS.map((item) => (
+              <Tab
+                key={item.key}
+                role="tab"
+                aria-selected={item.key === tab}
+                $on={item.key === tab}
+                onClick={() => select(item.key)}
+              >
+                {item.label}
+                {"badge" in item && item.badge ? <span className="badge">{item.badge}</span> : null}
               </Tab>
             ))}
-          </Tabs>
+          </Side>
           <View>
             <AnimatePresence mode="wait">
-              <motion.div key={tab} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3, ease }}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.28, ease }}
+              >
                 <div className="label">{data.label}</div>
                 <h3>{data.title}</h3>
                 <div className="desc">{data.desc}</div>
+                <div className="demo">demo data · not revenue</div>
                 <ProductConsolePreview tab={tab} />
               </motion.div>
             </AnimatePresence>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import { motion } from "framer-motion";
 import { LedgerIcon } from "./LedgerIcons";
+import { playLandingTone } from "./useLandingAudio";
 
 const dark = "#111214";
 const ease = [0.22, 0.7, 0.2, 1] as const;
@@ -298,6 +299,16 @@ const HARD_RULES = [
 export default function SafetyGate() {
   const [run, setRun] = useState(0);
 
+  useEffect(() => {
+    playLandingTone("scan");
+    const block = window.setTimeout(() => playLandingTone("block"), 700);
+    const pass = window.setTimeout(() => playLandingTone("pass"), 1500);
+    return () => {
+      window.clearTimeout(block);
+      window.clearTimeout(pass);
+    };
+  }, [run]);
+
   return (
     <Safety id="safety">
       <Warning>STOP · REVIEW · STOP</Warning>
@@ -352,7 +363,14 @@ export default function SafetyGate() {
             <span className="bad">01 blocked</span>
             <span className="ok">06 checks passed</span>
           </GateStatus>
-          <Replay onClick={() => setRun((x) => x + 1)}>Run gate again ↻</Replay>
+          <Replay
+            onClick={() => {
+              playLandingTone("click");
+              setRun((x) => x + 1);
+            }}
+          >
+            Run gate again ↻
+          </Replay>
         </GateDemo>
       </SafetyGrid>
     </Safety>

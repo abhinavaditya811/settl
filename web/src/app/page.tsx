@@ -11,6 +11,7 @@ import RecoveryPrelude from "@/components/landing/RecoveryPrelude";
 import RecoveryStory from "@/components/landing/RecoveryStory";
 import RecoveryProofs from "@/components/landing/RecoveryProofs";
 import RecoveryClose from "@/components/landing/RecoveryClose";
+import LandingChrome from "@/components/landing/LandingChrome";
 
 const fontVars = {
   "--font-display": "'Space Grotesk', system-ui, sans-serif",
@@ -60,6 +61,7 @@ export default function LandingPage() {
       <MotionConfig reducedMotion="user">
         <Canvas>
           <ScrollProgress />
+          <LandingChrome />
           <RecoveryPrelude />
           <RecoveryStory />
           <RecoveryProofs />
