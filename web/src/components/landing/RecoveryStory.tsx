@@ -137,7 +137,7 @@ function Scene({ stage }: { stage:number }) {
 }
 
 export default function RecoveryStory(){
-  const ref=useRef<HTMLElement>(null);
+  const ref=useRef<HTMLDivElement>(null);
   const [stage,setStage]=useState(0);
   const reduce=useReducedMotion();
   const {scrollYProgress}=useScroll({target:ref,offset:["start start","end end"]});
