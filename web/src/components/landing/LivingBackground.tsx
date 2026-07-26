@@ -1,37 +1,38 @@
 "use client";
 
-// One continuous living background for the WHOLE page (fixed, behind everything).
-// A drifting canvas mesh for texture + a scroll-reactive dual-gradient whose hue
-// shifts per narrative beat (violet hero → green at "recovered" → red at "the gate"
-// → back to violet) + a faint masked grid. This is what kills the purple-then-black
-// feel: the field is one fixed surface every section sits on. Build-safe (no WebGL).
+// One restrained ledger field behind the whole page. Scroll-reactive color marks the
+// invoice's state while fixed rules give every section the same visual coordinate system.
 
 import styled from "styled-components";
 import { motion, useScroll, useTransform, useMotionTemplate } from "framer-motion";
-import MeshBackground from "./MeshBackground";
 
 const Fixed = styled.div`
   position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
 `;
 const Grid = styled.div`
-  position: absolute; inset: 0; opacity: 0.32;
+  position: absolute; inset: 0; opacity: 0.42;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 60px 60px;
-  -webkit-mask-image: radial-gradient(ellipse 85% 65% at 50% 38%, #000, transparent 82%);
-  mask-image: radial-gradient(ellipse 85% 65% at 50% 38%, #000, transparent 82%);
+    linear-gradient(rgba(240,237,228,0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240,237,228,0.028) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.45) 75%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.45) 75%, transparent 100%);
+`;
+const LedgerRule = styled.div`
+  position: absolute; top: 0; bottom: 0; left: max(24px, calc(50% - 560px));
+  width: 1px; background: rgba(240,237,228,0.055);
+  @media (max-width: 720px) { left: 18px; }
 `;
 
 // Scroll beats: 0 hero · 0.32 pipeline · 0.58 recovered · 0.80 the gate · 1 close.
 const STOPS = [0, 0.32, 0.58, 0.8, 1];
 const LAYER_A = [
-  "rgba(109,94,246,0.34)", "rgba(123,108,255,0.30)", "rgba(70,211,154,0.24)",
-  "rgba(255,107,107,0.20)", "rgba(109,94,246,0.30)",
+  "rgba(119,105,232,0.20)", "rgba(119,105,232,0.17)", "rgba(119,215,170,0.15)",
+  "rgba(238,119,119,0.12)", "rgba(119,105,232,0.14)",
 ];
 const LAYER_B = [
-  "rgba(70,110,230,0.22)", "rgba(155,140,255,0.22)", "rgba(46,200,160,0.18)",
-  "rgba(232,120,120,0.16)", "rgba(109,94,246,0.20)",
+  "rgba(63,74,114,0.13)", "rgba(167,156,247,0.12)", "rgba(83,159,126,0.10)",
+  "rgba(136,74,74,0.09)", "rgba(119,105,232,0.10)",
 ];
 
 export default function LivingBackground() {
@@ -39,13 +40,13 @@ export default function LivingBackground() {
   const a = useTransform(scrollYProgress, STOPS, LAYER_A);
   const b = useTransform(scrollYProgress, STOPS, LAYER_B);
   const bg = useMotionTemplate`
-    radial-gradient(1100px 820px at 16% 8%, ${a}, transparent 56%),
-    radial-gradient(1000px 780px at 84% 84%, ${b}, transparent 56%)`;
+    radial-gradient(900px 680px at 12% 5%, ${a}, transparent 62%),
+    radial-gradient(900px 760px at 88% 82%, ${b}, transparent 64%)`;
   return (
     <Fixed aria-hidden="true">
-      <MeshBackground />
       <motion.div style={{ position: "absolute", inset: 0, background: bg }} />
       <Grid />
+      <LedgerRule />
     </Fixed>
   );
 }

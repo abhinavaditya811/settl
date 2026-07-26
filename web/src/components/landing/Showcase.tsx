@@ -6,7 +6,7 @@
 import { useState } from "react";
 import styled from "styled-components";
 import { motion, AnimatePresence } from "framer-motion";
-import { c, glass, tele, kfPulse, kfScan, screen } from "./palette";
+import { c, focusRing, glass, tele, kfPulse, kfScan, screen } from "./palette";
 
 const reveal = {
   initial: { opacity: 0, y: 28 }, whileInView: { opacity: 1, y: 0 },
@@ -17,23 +17,29 @@ const Kicker = styled.div`${tele}; color: ${c.accent2};`;
 const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 52px); line-height: 1.0; letter-spacing: -0.035em; font-weight: 700; margin: 12px 0 0; max-width: 20ch;`;
 const Lead = styled.p`font-size: 16px; line-height: 1.65; color: ${c.muted}; max-width: 58ch; margin: 16px 0 0;`;
 
-const Panel = styled.div`${glass}; border-radius: 18px; margin-top: 36px; overflow: hidden; position: relative;`;
+const Panel = styled.div`${glass}; border-radius: 20px; margin-top: 40px; overflow: hidden; position: relative;`;
 const Scan = styled.div`position: absolute; top: 0; left: 0; right: 0; height: 1px; overflow: hidden; div { height: 100%; width: 40%; background: linear-gradient(90deg, transparent, ${c.accent2}, transparent); animation: ${kfScan} 4.5s ease-in-out infinite; }`;
 const TopBar = styled.div`display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid ${c.line}; background: rgba(255,255,255,0.02); ${tele}; color: ${c.muted}; .live { width: 8px; height: 8px; border-radius: 50%; background: ${c.ok}; display: inline-block; margin-right: 8px; vertical-align: 1px; animation: ${kfPulse} 1.8s ease-in-out infinite; }`;
-const Grid = styled.div`display: grid; grid-template-columns: 232px 1fr; @media (max-width: 760px) { grid-template-columns: 1fr; }`;
+const Grid = styled.div`display: grid; grid-template-columns: 220px 1fr; @media (max-width: 760px) { grid-template-columns: 1fr; }`;
 const Rail = styled.div`border-right: 1px solid ${c.line}; padding: 12px; display: flex; flex-direction: column; gap: 4px; @media (max-width: 760px) { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid ${c.line}; }`;
 const Tab = styled.button<{ $on: boolean }>`
-  text-align: left; padding: 12px 14px; border-radius: 11px; cursor: pointer; border: none; white-space: nowrap;
-  background: ${({ $on }) => ($on ? "rgba(155,140,255,0.12)" : "transparent")};
+  ${focusRing};
+  position:relative; text-align: left; padding: 12px 14px 12px 16px; border-radius: 11px; cursor: pointer; border: none; white-space: nowrap;
+  background: ${({ $on }) => ($on ? "rgba(167,156,247,0.1)" : "transparent")};
   color: ${({ $on }) => ($on ? c.ink : c.muted)};
   .l { font-family: ${c.display}; font-size: 14.5px; font-weight: 600; }
   .s { font-size: 12px; color: ${c.faint}; margin-top: 2px; }
   &:hover { background: rgba(255,255,255,0.05); }
 `;
-const View = styled.div`padding: 22px 24px; min-height: 270px;`;
+const ActiveIndicator = styled(motion.span)`
+  position:absolute; left:5px; top:10px; bottom:10px; width:2px; border-radius:2px; background:${c.accent2};
+  box-shadow:0 0 10px rgba(167,156,247,.45);
+  @media (max-width:760px) { left:14px; right:14px; top:auto; bottom:3px; width:auto; height:2px; }
+`;
+const View = styled.div`padding: 28px 30px; min-height: 300px; @media (max-width: 560px) { padding: 22px 18px; }`;
 const VTitle = styled.div`font-family: ${c.display}; font-size: 20px; font-weight: 600;`;
 const VDesc = styled.div`font-size: 14px; color: ${c.muted}; line-height: 1.6; margin: 8px 0 18px; max-width: 48ch;`;
-const Mini = styled.div`${glass}; border-radius: 12px; padding: 14px 16px;`;
+const Mini = styled.div`border: 1px solid ${c.line}; background: rgba(255,255,255,.018); border-radius: 12px; padding: 14px 16px;`;
 const Row = styled.div`display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 7px 0;`;
 const Av = styled.span<{ $fg: string; $bg: string }>`width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg};`;
 const Pill = styled.span<{ $fg: string; $bg: string }>`margin-left: auto; font-family: ${c.mono}; font-size: 10px; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 6px; color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg};`;
@@ -98,9 +104,10 @@ export default function Showcase() {
         <Scan><div /></Scan>
         <TopBar><span><span className="live" />settl console · live</span><span>4 views · one engine</span></TopBar>
         <Grid>
-          <Rail>
+          <Rail role="tablist" aria-label="Settl console views">
             {TABS.map((t) => (
-              <Tab key={t.key} $on={t.key === active} onClick={() => setActive(t.key)}>
+              <Tab key={t.key} role="tab" aria-selected={t.key === active} $on={t.key === active} onClick={() => setActive(t.key)}>
+                {t.key === active && <ActiveIndicator layoutId="console-tab-indicator" transition={{ type:"spring", stiffness:420, damping:34 }} />}
                 <div className="l">{t.label}</div><div className="s">{t.sub}</div>
               </Tab>
             ))}

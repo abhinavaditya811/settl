@@ -4,7 +4,7 @@
 // count-up stats, and a closing statement. Glass + motion, hero-bar quality.
 
 import styled from "styled-components";
-import { c, glass, tele, kfPulse, kfScan, screen, spotGlow } from "./palette";
+import { c, focusRing, glass, tele, kfPulse, kfScan, screen, spotGlow } from "./palette";
 import { Reveal, spotlightMove } from "./anim";
 
 const Section = styled.section`${screen};`;
@@ -14,9 +14,26 @@ const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 52px
 const Lead = styled.p`font-size: 16px; line-height: 1.65; color: ${c.muted}; max-width: 58ch; margin: 16px 0 0;`;
 
 // --- safety telemetry panel ---
-const Console = styled.div`${glass}; border-radius: 18px; overflow: hidden; margin-top: 34px; position: relative;`;
+const Console = styled.div`${glass}; border-radius: 20px; overflow: hidden; margin-top: 38px; position: relative;`;
 const Scan = styled.div`position: absolute; top: 0; left: 0; right: 0; height: 1px; overflow: hidden; div { height: 100%; width: 40%; background: linear-gradient(90deg, transparent, ${c.ok}, transparent); animation: ${kfScan} 4.5s ease-in-out infinite; }`;
 const CHead = styled.div`display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; border-bottom: 1px solid ${c.line}; background: rgba(255,255,255,0.02); ${tele}; color: ${c.muted}; .live { width: 8px; height: 8px; border-radius: 50%; background: ${c.ok}; display: inline-block; margin-right: 8px; vertical-align: 1px; animation: ${kfPulse} 1.8s ease-in-out infinite; }`;
+const GatePath = styled.div`
+  padding: 22px 22px 18px; border-bottom: 1px solid ${c.line}; position: relative;
+  .line { position: absolute; left: 8%; right: 8%; top: 31px; height: 1px; background: linear-gradient(90deg,${c.accent2} 0 55%,${c.bad} 55% 72%,${c.faint} 72%); opacity:.7; }
+  .stages { display:grid; grid-template-columns:repeat(6,1fr); position:relative; }
+  .stage { text-align:center; ${tele}; font-size:9px; color:${c.faint}; }
+  .node { width:10px; height:10px; border-radius:50%; margin:4px auto 11px; background:${c.surface}; border:1px solid ${c.accent2}; }
+  .gate { color:${c.bad}; font-weight:600; }
+  .gate .node { width:16px; height:16px; margin-top:1px; margin-bottom:8px; background:${c.bad}; border:4px solid rgba(238,119,119,.2); box-shadow:0 0 0 1px ${c.bad}; }
+  .after .node { border-color:${c.faint}; }
+  .caption { margin-top:16px; display:flex; justify-content:space-between; gap:16px; font-size:12px; color:${c.muted}; }
+  .caption strong { color:${c.bad}; font-family:${c.mono}; font-weight:500; }
+  @media (max-width:560px) {
+    padding-inline:14px;
+    .stage { font-size:7.5px; letter-spacing:.03em; }
+    .caption { font-size:11px; }
+  }
+`;
 const Readout = styled.div`display: grid; grid-template-columns: 1fr 1fr; @media (max-width: 640px) { grid-template-columns: 1fr; }`;
 const RItem = styled.div`
   padding: 20px 22px; border-bottom: 1px solid ${c.line};
@@ -28,26 +45,22 @@ const RItem = styled.div`
   .dot { width: 10px; height: 10px; border-radius: 50%; background: ${c.ok}; animation: ${kfPulse} 1.9s ease-in-out infinite; }
 `;
 
-const Note = styled.div`${tele}; color: ${c.faint}; margin-top: 22px;`;
-
 // --- pricing ---
 const PriceGrid = styled.div`
-  margin-top: 38px; display: grid; grid-template-columns: 1fr minmax(280px, 360px); gap: 40px; align-items: stretch;
-  @media (max-width: 880px) { grid-template-columns: 1fr; gap: 22px; }
+  margin-top: 42px; display: grid; grid-template-columns: 1fr minmax(280px, 360px); border-top: 1px solid ${c.lineStrong}; border-bottom: 1px solid ${c.lineStrong}; align-items: stretch;
+  @media (max-width: 880px) { grid-template-columns: 1fr; }
 `;
-const Prices = styled.div`display: grid; grid-template-columns: 1fr 1fr; gap: 14px; @media (max-width: 520px) { grid-template-columns: 1fr; }`;
+const Prices = styled.div`display: grid; grid-template-columns: 1fr 1fr; @media (max-width: 520px) { grid-template-columns: 1fr; }`;
 const PriceCard = styled.div<{ $accent?: boolean }>`
-  ${glass}; ${spotGlow}; border-radius: 18px; padding: 30px 26px;
-  border-color: ${({ $accent }) => ($accent ? "rgba(155,140,255,0.5)" : c.glassBorder)};
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  &:hover { transform: translateY(-5px); border-color: rgba(155,140,255,0.6); box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
-  &::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: ${({ $accent }) => ($accent ? 1 : 0)}; background: radial-gradient(420px 160px at 50% 0%, rgba(109,94,246,0.18), transparent 70%); }
+  ${spotGlow}; padding: 34px 28px; min-height: 230px;
+  border-right: 1px solid ${c.line}; background: ${({ $accent }) => ($accent ? "rgba(167,156,247,.045)" : "transparent")};
+  transition: background .2s ease;
+  &:hover { background: rgba(167,156,247,.07); }
 `;
 // Right-hand panel: what every plan includes, so the pricing block fills the width.
 const Included = styled.div`
-  ${glass}; ${spotGlow}; border-radius: 18px; padding: 28px 26px; display: flex; flex-direction: column;
-  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
-  &:hover { transform: translateY(-4px); border-color: rgba(155,140,255,0.5); box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+  ${spotGlow}; padding: 34px 28px; display: flex; flex-direction: column;
+  transition: background .22s ease; &:hover { background: rgba(255,255,255,.025); }
   .h { ${tele}; color: ${c.accent2}; margin-bottom: 18px; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
   li { display: flex; align-items: flex-start; gap: 11px; font-size: 14px; line-height: 1.45; color: ${c.ink}; }
@@ -58,16 +71,16 @@ const PBig = styled.div`font-family: ${c.display}; font-size: 42px; font-weight:
 const PText = styled.div`font-size: 14px; line-height: 1.6; color: ${c.muted}; margin-top: 14px; max-width: 34ch;`;
 
 // --- closing ---
-const Closer = styled.div`${glass}; border-radius: 24px; text-align: center; padding: 66px 28px; position: relative; overflow: hidden; &::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px 200px at 50% 0%, rgba(109,94,246,0.22), transparent 70%); pointer-events: none; }`;
+const Closer = styled.div`${glass}; border-radius: 24px; text-align: center; padding: 78px 28px; position: relative; overflow: hidden; &::before { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, rgba(167,156,247,.1), transparent 45%, rgba(119,215,170,.06)); pointer-events: none; }`;
 const CloseH = styled.h2`font-family: ${c.display}; font-size: clamp(34px, 5.4vw, 58px); line-height: 1.0; letter-spacing: -0.04em; font-weight: 700; margin: 0 auto; max-width: 16ch; position: relative;`;
-const CtaBtn = styled.button`margin-top: 28px; font-size: 15px; font-weight: 600; padding: 14px 28px; border-radius: 11px; border: none; cursor: pointer; color: #fff; background: ${c.accent}; box-shadow: 0 0 36px rgba(109,94,246,0.6); position: relative; &:hover { filter: brightness(1.08); }`;
+const CtaBtn = styled.button`${focusRing}; margin-top: 28px; font-size: 15px; font-weight: 600; padding: 14px 28px; border-radius: 999px; border: none; cursor: pointer; color: ${c.bgDeep}; background: ${c.paper}; position: relative; transition: transform .2s ease; &:hover { transform: translateY(-2px); }`;
 // --- footer ---
 const Foot = styled.footer`margin-top: 96px; padding-top: 44px; border-top: 1px solid ${c.line};`;
 const FootTop = styled.div`
   display: flex; justify-content: space-between; gap: 48px 40px; flex-wrap: wrap;
   .brand { max-width: 320px; }
   .lock { display: flex; align-items: center; gap: 10px; }
-  .logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, ${c.accent2}, ${c.accent}); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(109,94,246,.45), inset 0 1px 0 rgba(255,255,255,.3); }
+  .logo { width: 32px; height: 32px; border-radius: 50%; color: ${c.accent2}; background: ${c.surfaceRaised}; border: 1px solid ${c.lineStrong}; display: flex; align-items: center; justify-content: center; }
   .name { font-family: ${c.display}; font-size: 19px; font-weight: 700; letter-spacing: -0.02em; }
   .name .dot { color: ${c.accent2}; }
   .tag { font-size: 13.5px; line-height: 1.65; color: ${c.muted}; margin: 15px 0 0; }
@@ -77,7 +90,7 @@ const FCol = styled.div`
   display: flex; flex-direction: column; gap: 13px; align-items: flex-start;
   .h { ${tele}; color: ${c.faint}; margin-bottom: 3px; }
   a, button { text-align: left; font-size: 13.5px; color: ${c.muted}; background: none; border: none; padding: 0; cursor: pointer; font-family: ${c.body}; text-decoration: none; transition: color 0.15s ease;
-    &:hover { color: ${c.ink}; } }
+    &:hover { color: ${c.ink}; } ${focusRing}; }
 `;
 const FootBottom = styled.div`display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 48px; padding-top: 22px; border-top: 1px solid ${c.line}; ${tele};`;
 
@@ -95,6 +108,15 @@ export default function LandingSections() {
           <Console>
             <Scan><div /></Scan>
             <CHead><span><span className="live" />settl · safety status</span><span>all systems nominal</span></CHead>
+            <GatePath aria-label="Every invoice must pass the compliance gate">
+              <div className="line" aria-hidden="true" />
+              <div className="stages">
+                {["Ingest", "Decide", "Draft"].map((label) => <div className="stage" key={label}><div className="node" />{label}</div>)}
+                <div className="stage gate"><div className="node" />Gate</div>
+                {["Send", "Paid"].map((label) => <div className="stage after" key={label}><div className="node" />{label}</div>)}
+              </div>
+              <div className="caption"><span>Every recovery path converges here.</span><strong>nothing bypasses the gate</strong></div>
+            </GatePath>
             <Readout>
               <RItem><div className="lbl">unsafe sends</div><div className="val"><span className="dot" />0</div><div className="sub">caught and escalated by the gate</div></RItem>
               <RItem><div className="lbl">compliance gate</div><div className="val"><span className="dot" />armed</div><div className="sub">runs on every single send</div></RItem>
@@ -136,12 +158,10 @@ export default function LandingSections() {
                 <li><span className="ck">✓</span>Reminders drafted in your own voice</li>
                 <li><span className="ck">✓</span>Email and voice, from one agent</li>
                 <li><span className="ck">✓</span>A full audit log of every decision</li>
-                <li><span className="ck">✓</span>Never custodial, paid via your own processor</li>
               </ul>
             </Included>
           </Reveal>
         </PriceGrid>
-        <Note>Never custodial: you&apos;re paid through your own processor, and Settl only ever records the fee.</Note>
       </Section>
 
       <CloserScreen>
@@ -159,7 +179,7 @@ export default function LandingSections() {
           <div className="brand">
             <div className="lock">
               <span className="logo" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="1 4 1 10 7 10" />
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                 </svg>

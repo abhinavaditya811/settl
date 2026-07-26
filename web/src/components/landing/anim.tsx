@@ -4,7 +4,7 @@
 // that animates the first time it scrolls into view.
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { motion, useInView, type HTMLMotionProps } from "framer-motion";
+import { motion, useInView, useReducedMotion, type HTMLMotionProps } from "framer-motion";
 
 // Shared card hover handler: writes the pointer position into --mx/--my CSS vars so a
 // radial highlight can follow the cursor across the card (see `spotGlow` in palette).
@@ -17,12 +17,13 @@ export function spotlightMove(e: MouseEvent<HTMLElement>) {
 }
 
 export function Reveal({ delay = 0, children, ...rest }: HTMLMotionProps<"div"> & { delay?: number }) {
+  const reduce = useReducedMotion();
   return (
     <motion.div
-      initial={{ opacity: 0, y: 26 }}
+      initial={{ opacity: 0, y: reduce ? 0 : 22 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-90px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.7, 0.2, 1] }}
+      transition={{ duration: reduce ? 0.01 : 0.65, delay: reduce ? 0 : delay, ease: [0.22, 0.7, 0.2, 1] }}
       {...rest}
     >
       {children}
@@ -35,9 +36,14 @@ export function Counter({
 }: { to: number; prefix?: string; suffix?: string; decimals?: number; duration?: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
+  const reduce = useReducedMotion();
   const [v, setV] = useState(0);
   useEffect(() => {
     if (!inView) return;
+    if (reduce) {
+      setV(to);
+      return;
+    }
     let raf = 0, t0 = 0;
     const step = (t: number) => {
       if (!t0) t0 = t;
@@ -47,6 +53,6 @@ export function Counter({
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [inView, to, duration]);
+  }, [inView, to, duration, reduce]);
   return <span ref={ref}>{prefix}{v.toLocaleString(undefined, { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}{suffix}</span>;
 }

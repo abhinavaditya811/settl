@@ -1,22 +1,16 @@
 "use client";
 
-// Public landing page (/). Cinematic "Mission Control": one living, scroll-reactive
-// background behind the whole page, a hero, a scrollytelling "follow one invoice"
-// scene, the voice USP, then the rest. Font loading is inlined (no separate layout).
+// Public landing page (/). "Operational Ledger": one recovery path expressed through
+// product surfaces, a scroll-driven invoice journey, and the interactive voice demo.
 
 import type { CSSProperties } from "react";
 import styled from "styled-components";
-import { motion, useScroll, useSpring } from "framer-motion";
+import { MotionConfig, motion, useScroll, useSpring } from "framer-motion";
 import { c } from "@/components/landing/palette";
-import LivingBackground from "@/components/landing/LivingBackground";
-import Preloader from "@/components/landing/Preloader";
-import Hero from "@/components/landing/Hero";
-import Outcomes from "@/components/landing/Outcomes";
-import InvoiceJourney from "@/components/landing/InvoiceJourney";
-import VoiceHighlight from "@/components/landing/VoiceHighlight";
-import Explainer from "@/components/landing/Explainer";
-import Showcase from "@/components/landing/Showcase";
-import LandingSections from "@/components/landing/LandingSections";
+import RecoveryPrelude from "@/components/landing/RecoveryPrelude";
+import RecoveryStory from "@/components/landing/RecoveryStory";
+import RecoveryProofs from "@/components/landing/RecoveryProofs";
+import RecoveryClose from "@/components/landing/RecoveryClose";
 
 const fontVars = {
   "--font-display": "'Space Grotesk', system-ui, sans-serif",
@@ -30,17 +24,26 @@ const HREF =
 const Canvas = styled.div`
   position: relative;
   min-height: 100vh;
-  overflow-x: clip; /* the aurora/spotlight can overflow; clip is sticky-safe unlike hidden */
+  overflow-x: clip;
   background: ${c.bg};
   color: ${c.ink};
   font-family: ${c.body};
   -webkit-font-smoothing: antialiased;
+  *, *::before, *::after { box-sizing: border-box; }
+  ::selection { background: rgba(167,156,247,.28); color: ${c.ink}; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button:focus-visible, a:focus-visible { outline: 2px solid ${c.accent2}; outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
 `;
-const Inner = styled.div`position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 24px 90px;`;
 const Progress = styled(motion.div)`
-  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; transform-origin: 0%;
-  background: linear-gradient(90deg, ${c.accent2}, ${c.accent});
-  box-shadow: 0 0 12px rgba(109, 94, 246, 0.6);
+  position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 100; transform-origin: 0%;
+  background: linear-gradient(90deg, ${c.accent2}, ${c.ok});
 `;
 
 function ScrollProgress() {
@@ -54,20 +57,15 @@ export default function LandingPage() {
     <div style={fontVars}>
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link rel="stylesheet" href={HREF} />
-      <Preloader />
-      <Canvas>
-        <ScrollProgress />
-        <LivingBackground />
-        <Inner>
-          <Hero />
-          <Outcomes />
-          <VoiceHighlight />
-          <Explainer />
-          <InvoiceJourney />
-          <Showcase />
-          <LandingSections />
-        </Inner>
-      </Canvas>
+      <MotionConfig reducedMotion="user">
+        <Canvas>
+          <ScrollProgress />
+          <RecoveryPrelude />
+          <RecoveryStory />
+          <RecoveryProofs />
+          <RecoveryClose />
+        </Canvas>
+      </MotionConfig>
     </div>
   );
 }
