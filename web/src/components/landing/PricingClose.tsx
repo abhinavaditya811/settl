@@ -2,6 +2,8 @@
 
 import styled from "styled-components";
 import { motion } from "framer-motion";
+import SiteFooter from "./SiteFooter";
+import MagneticCta from "./MagneticCta";
 
 const dark = "#111214";
 const paper = "#f1ecdf";
@@ -253,47 +255,7 @@ const CloseCore = styled.div`
     max-width: 45ch;
     margin: 25px auto 0;
   }
-  button {
-    margin-top: 30px;
-    padding: 15px 24px;
-    border: 0;
-    border-radius: 99px;
-    background: #f6f1e8;
-    color: #171126;
-    font: 600 14px var(--font-body);
-    cursor: pointer;
-    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-  }
-  button:hover {
-    transform: translateY(-3px);
-    background: ${mint};
-    box-shadow: 0 16px 40px rgba(118, 217, 170, 0.22);
-  }
 `;
-const Footer = styled.footer`
-  background: #171126;
-  color: rgba(255, 255, 255, 0.5);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 28px max(24px, calc((100% - 1180px) / 2));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  font: 500 9px var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  .brand {
-    font: 600 17px var(--font-display);
-    color: #fff;
-    text-transform: none;
-    letter-spacing: -0.02em;
-  }
-  @media (max-width: 600px) {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-`;
-
 export default function PricingClose() {
   return (
     <>
@@ -351,14 +313,10 @@ export default function PricingClose() {
           <div className="eye">the recovery line is ready</div>
           <h2>Let the invoice chase itself.</h2>
           <p>You did the work. Settl handles the path from overdue to paid, with the controls and proof your business needs.</p>
-          <button onClick={() => location.assign("/signin")}>Open your dashboard</button>
+          <MagneticCta onClick={() => location.assign("/signin")}>Open your dashboard</MagneticCta>
         </CloseCore>
       </Close>
-      <Footer>
-        <span className="brand">Settl.</span>
-        <span>© 2026 · built for the people who did the work</span>
-        <span>never custodial · B2B only</span>
-      </Footer>
+      <SiteFooter />
     </>
   );
 }
