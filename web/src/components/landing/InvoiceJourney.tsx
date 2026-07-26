@@ -8,8 +8,8 @@
 
 import { useRef, useState } from "react";
 import styled from "styled-components";
-import { motion, useScroll, useTransform, useMotionValueEvent, AnimatePresence } from "framer-motion";
-import { c, glass, tele } from "./palette";
+import { motion, useScroll, useTransform, useMotionValueEvent, AnimatePresence, useReducedMotion } from "framer-motion";
+import { c, focusRing, glass, tele } from "./palette";
 
 type Stage = {
   key: string; n: string; label: string; head: string; desc: string;
@@ -32,13 +32,13 @@ const STAGES: Stage[] = [
     head: "You get paid.", desc: "Payment detected and reconciled automatically. Days-to-pay dropped from 31 to 19, and you did nothing." },
 ];
 
-const Tall = styled.div`position: relative; height: ${STAGES.length * 55}vh;`;
-const Pin = styled.div`position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 40px 0; overflow: hidden;`;
+const Tall = styled.div`position: relative; height: ${STAGES.length * 48}vh;`;
+const Pin = styled.div`position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 34px 0; overflow: hidden;`;
 const Ghost = styled.div`
   position: absolute; right: 1%; top: 50%; transform: translateY(-50%); z-index: 0; pointer-events: none; user-select: none;
   font-family: ${c.display}; font-weight: 700; line-height: 1; font-size: clamp(220px, 36vw, 500px);
-  color: rgba(255, 255, 255, 0.035);
-  @media (max-width: 760px) { display: none; }
+  color: rgba(240,237,228,0.032);
+  @media (max-width: 760px) { font-size: 42vw; right: -2%; top: 30%; opacity: .7; }
 `;
 const Kicker = styled.div`${tele}; color: ${c.accent2}; text-align: center; margin-bottom: 30px;`;
 const Grid = styled.div`
@@ -50,12 +50,24 @@ const Grid = styled.div`
 const Rail = styled.div`position: relative; padding-left: 26px; @media (max-width: 760px) { display: none; }`;
 const RailLine = styled.div`position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;`;
 const RailFill = styled(motion.div)`position: absolute; left: 0; top: 0; width: 100%; background: linear-gradient(${c.accent2}, ${c.ok}); border-radius: 2px;`;
-const RailItem = styled.div<{ $on: boolean }>`
-  position: relative; display: flex; align-items: center; gap: 12px; padding: 11px 0;
+const RailItem = styled.button<{ $on: boolean }>`
+  ${focusRing}; position: relative; display: flex; align-items: center; gap: 12px; padding: 11px 0;
+  border: 0; background: none; cursor: pointer; text-align: left; width: 100%;
   color: ${({ $on }) => ($on ? c.ink : c.faint)}; transition: color 0.3s ease;
   .dot { position: absolute; left: -26px; width: 12px; height: 12px; border-radius: 50%; background: ${({ $on }) => ($on ? c.accent2 : "rgba(255,255,255,0.14)")}; box-shadow: ${({ $on }) => ($on ? `0 0 0 4px rgba(109,94,246,0.18)` : "none")}; transition: all 0.3s ease; }
   .n { font-family: ${c.mono}; font-size: 11px; color: ${c.faint}; }
   .l { font-family: ${c.display}; font-size: 14px; font-weight: 600; }
+`;
+const MobileRail = styled.div`
+  display: none;
+  @media (max-width: 760px) {
+    display: grid; grid-template-columns: repeat(6,1fr); gap: 5px; margin: -8px 0 24px;
+  }
+`;
+const MobileSegment = styled.button<{ $on: boolean; $active: boolean }>`
+  ${focusRing}; border: 0; cursor: pointer; padding: 8px 0; background: transparent;
+  &::before { content:""; display:block; height:3px; border-radius:3px; background:${({ $on }) => ($on ? c.accent2 : "rgba(255,255,255,.11)")}; transition:background .25s ease, transform .25s ease; transform:${({ $active }) => ($active ? "scaleY(1.7)" : "scaleY(1)")}; }
+  span { display:block; margin-top:8px; font: 9px ${c.mono}; color:${({ $active }) => ($active ? c.ink : c.faint)}; }
 `;
 
 const Right = styled.div`
@@ -76,19 +88,34 @@ const Card = styled(motion.div)<{ $fg: string }>`
   .track { height: 7px; border-radius: 99px; background: rgba(255,255,255,0.07); margin-top: 20px; overflow: hidden; }
 `;
 const Pill = styled.span<{ $fg: string; $bg: string }>`font-family: ${c.mono}; font-size: 11px; letter-spacing: 0.05em; padding: 4px 10px; border-radius: 7px; color: ${({ $fg }) => $fg}; background: ${({ $bg }) => $bg}; white-space: nowrap;`;
+const Evidence = styled.div`
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid ${c.line}; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 12px; color: ${c.muted};
+  .event { font-family: ${c.mono}; color: ${c.accent2}; }
+`;
+
+const EVENTS = ["canonical invoice", "tone · firm", "message ready", "5 checks passed", "gmail · delivered", "payment verified"];
 
 export default function InvoiceJourney() {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
   const [stage, setStage] = useState(0);
+  const reduce = useReducedMotion();
   useMotionValueEvent(scrollYProgress, "change", (v) => {
     setStage(Math.max(0, Math.min(STAGES.length - 1, Math.floor(v * STAGES.length))));
   });
   const fillH = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
   const s = STAGES[stage];
+  const goToStage = (index: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const top = window.scrollY + el.getBoundingClientRect().top;
+    const distance = el.offsetHeight - window.innerHeight;
+    window.scrollTo({ top: top + distance * (index / (STAGES.length - 1)), behavior: reduce ? "auto" : "smooth" });
+  };
 
   return (
-    <Tall ref={ref}>
+    <Tall ref={ref} id="journey">
       <Pin>
         <Ghost aria-hidden="true">{s.n}</Ghost>
         <Kicker>// watch the agent work · one invoice, start to paid</Kicker>
@@ -96,7 +123,7 @@ export default function InvoiceJourney() {
           <Rail>
             <RailLine><RailFill style={{ height: fillH }} /></RailLine>
             {STAGES.map((st, i) => (
-              <RailItem key={st.key} $on={i <= stage}>
+              <RailItem key={st.key} $on={i <= stage} onClick={() => goToStage(i)} aria-current={i === stage ? "step" : undefined}>
                 <span className="dot" />
                 <span className="n">{st.n}</span><span className="l">{st.label}</span>
               </RailItem>
@@ -105,6 +132,13 @@ export default function InvoiceJourney() {
 
           <Right>
             <div>
+              <MobileRail aria-label="Invoice recovery progress">
+                {STAGES.map((st, i) => (
+                  <MobileSegment key={st.key} $on={i <= stage} $active={i === stage} onClick={() => goToStage(i)} aria-label={`Go to ${st.label}`}>
+                    <span>{st.n}</span>
+                  </MobileSegment>
+                ))}
+              </MobileRail>
               <AnimatePresence mode="wait">
                 <motion.div key={s.key}
                   initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
@@ -135,6 +169,7 @@ export default function InvoiceJourney() {
                   style={{ height: "100%", borderRadius: 99 }}
                 />
               </div>
+              <Evidence><span className="event">{EVENTS[stage]}</span><span>event {stage + 1} / {STAGES.length}</span></Evidence>
             </Card>
           </Right>
         </Grid>

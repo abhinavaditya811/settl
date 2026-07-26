@@ -1,36 +1,34 @@
 "use client";
 
-// First-load "boot sequence" preloader. On brand for the mission-control theme: the
-// recovery-loop mark draws itself, the wordmark fades in, three telemetry lines tick
-// through (normalize → arm the gate → online), a progress line fills, then the whole
-// overlay lifts away like a curtain to reveal the hero. ~2.2s, then it unmounts.
-// Build-safe: framer-motion + SVG path drawing, no external libs.
+// A short first-visit ledger stamp. It never delays repeat visits and respects reduced
+// motion; the page itself remains the experience rather than a long boot sequence.
 
 import { useEffect, useState } from "react";
 import styled, { keyframes } from "styled-components";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { c, tele } from "./palette";
 
-const LINES = ["normalizing invoices", "arming compliance gate", "engine online"];
-const HOLD = 2200; // ms the boot sequence is shown before it lifts away
+const LINES = ["loading recovery ledger", "recovery path ready"];
+const MAX_HOLD = 900;
+const MIN_HOLD = 240;
 
 const spin = keyframes`to { transform: rotate(360deg); }`;
 
 const Overlay = styled(motion.div)`
   position: fixed; inset: 0; z-index: 9999;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  background: radial-gradient(circle at 50% 38%, #10121c, ${c.bgDeep} 72%);
+  background: ${c.bgDeep};
   overflow: hidden;
 `;
 // A faint sweeping halo behind the mark, for depth.
 const Halo = styled.div`
   position: absolute; width: 360px; height: 360px; border-radius: 50%; pointer-events: none;
-  background: conic-gradient(from 0deg, transparent, rgba(109,94,246,0.22), transparent 40%);
-  filter: blur(38px); opacity: 0.8; animation: ${spin} 3.4s linear infinite;
+  background: conic-gradient(from 0deg, transparent, rgba(167,156,247,0.16), transparent 40%);
+  filter: blur(42px); opacity: 0.65; animation: ${spin} 3.4s linear infinite;
 `;
 const Badge = styled(motion.div)`
   position: relative; width: 84px; height: 84px; border-radius: 23px;
-  background: linear-gradient(135deg, ${c.accent2}, ${c.accent});
+  background: ${c.surfaceRaised}; border: 1px solid ${c.lineStrong};
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 22px 64px rgba(109,94,246,0.55), inset 0 1px 0 rgba(255,255,255,0.35);
 `;
@@ -45,6 +43,7 @@ const Fill = styled(motion.div)`height: 100%; border-radius: 99px; background: l
 export default function Preloader() {
   const [show, setShow] = useState(true);
   const [step, setStep] = useState(0);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     // Play once per browser session: after the first boot, later visits (e.g. coming
@@ -53,11 +52,31 @@ export default function Preloader() {
       setShow(false);
       return;
     }
+    if (reduce) {
+      setShow(false);
+      return;
+    }
     window.sessionStorage?.setItem("settl_booted", "1");
-    const done = setTimeout(() => setShow(false), HOLD);
-    const tick = setInterval(() => setStep((s) => Math.min(s + 1, LINES.length - 1)), HOLD / (LINES.length + 1));
-    return () => { clearTimeout(done); clearInterval(tick); };
-  }, []);
+    let cancelled = false;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
+    const started = performance.now();
+    const maximum = new Promise<void>((resolve) => setTimeout(resolve, MAX_HOLD));
+    const fonts = document.fonts?.ready ?? Promise.resolve();
+    Promise.race([fonts, maximum]).then(() => {
+      const remaining = Math.max(0, MIN_HOLD - (performance.now() - started));
+      finishTimer = setTimeout(() => {
+        if (cancelled) return;
+        setStep(1);
+        exitTimer = setTimeout(() => setShow(false), 180);
+      }, remaining);
+    });
+    return () => {
+      cancelled = true;
+      if (finishTimer) clearTimeout(finishTimer);
+      if (exitTimer) clearTimeout(exitTimer);
+    };
+  }, [reduce]);
 
   const last = step === LINES.length - 1;
 
@@ -90,13 +109,13 @@ export default function Preloader() {
                 transition={{ duration: 0.28 }}
                 style={{ color: last ? c.ok : c.muted }}
               >
-                // {LINES[step]}
+                {LINES[step]}
               </motion.span>
             </AnimatePresence>
           </Line>
 
           <Track>
-            <Fill initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: HOLD / 1000, ease: [0.4, 0, 0.2, 1] }} />
+            <Fill initial={{ width: 0 }} animate={{ width: step ? "100%" : "72%" }} transition={{ duration: step ? .16 : .65, ease: [0.4, 0, 0.2, 1] }} />
           </Track>
         </Overlay>
       )}

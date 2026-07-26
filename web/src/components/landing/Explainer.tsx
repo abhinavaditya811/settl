@@ -6,6 +6,7 @@
 import styled from "styled-components";
 import { c, glass, tele, kfPulse, screen, spotGlow } from "./palette";
 import { Reveal, spotlightMove } from "./anim";
+import { LedgerIcon, type LedgerIconName } from "./LedgerIcons";
 
 const Kicker = styled.div`${tele}; color: ${c.accent2};`;
 const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 52px); line-height: 1.0; letter-spacing: -0.035em; font-weight: 700; margin: 12px 0 0; max-width: 18ch;`;
@@ -16,11 +17,11 @@ const ProblemGrid = styled.div`
   margin-top: 34px; display: grid; grid-template-columns: 1fr minmax(300px, 400px); gap: 56px; align-items: center;
   @media (max-width: 860px) { grid-template-columns: 1fr; gap: 32px; }
 `;
-const Pain = styled.div`display: flex; flex-direction: column; gap: 14px;`;
+const Pain = styled.div`display: flex; flex-direction: column; border-top: 1px solid ${c.lineStrong};`;
 const PRow = styled.div`
-  ${glass}; ${spotGlow}; border-radius: 13px; padding: 16px 18px; display: flex; align-items: center; gap: 14px;
-  font-size: 15px; color: ${c.ink}; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  &:hover { transform: translateX(6px); border-color: rgba(255,107,107,0.5); box-shadow: 0 12px 30px rgba(0,0,0,0.28); }
+  padding: 18px 2px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid ${c.line};
+  font-size: 15px; color: ${c.ink}; transition: padding 0.2s ease, color .2s ease;
+  &:hover { padding-left: 8px; color: ${c.paper}; }
   .m { font-family: ${c.mono}; color: ${c.bad}; font-size: 14px; flex-shrink: 0; }
 `;
 // The right-side visual: one invoice quietly rotting, to make the pain concrete.
@@ -40,24 +41,26 @@ const Overdue = styled.div`
 `;
 
 const Pipe = styled.div`
-  margin-top: 40px; display: grid; gap: 16px;
-  grid-template-columns: repeat(3, 1fr);
-  @media (max-width: 860px) { grid-template-columns: 1fr 1fr; }
-  @media (max-width: 560px) { grid-template-columns: 1fr; }
+  margin-top: 44px; display: grid; grid-template-columns: repeat(6, minmax(154px,1fr));
+  border-top: 1px solid ${c.lineStrong}; border-bottom: 1px solid ${c.lineStrong};
+  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `;
 const Stage = styled.div<{ $gate?: boolean }>`
-  ${glass}; ${spotGlow}; border-radius: 16px; padding: 22px 20px;
-  height: 100%; display: flex; flex-direction: column;
-  border-color: ${({ $gate }) => ($gate ? "rgba(255,107,107,0.5)" : c.glassBorder)};
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  &:hover { transform: translateY(-5px); border-color: ${({ $gate }) => ($gate ? "rgba(255,107,107,0.7)" : "rgba(155,140,255,0.55)")}; box-shadow: 0 18px 44px rgba(0,0,0,0.32); }
-  &::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: ${({ $gate }) => ($gate ? c.bad : c.accent)}; opacity: ${({ $gate }) => ($gate ? 1 : 0.6)}; }
+  ${spotGlow}; padding: 24px 18px; min-height: 230px; display: flex; flex-direction: column;
+  border-right: 1px solid ${c.line}; scroll-snap-align: start;
+  transition: background .22s ease;
+  &:hover { background: ${({ $gate }) => ($gate ? c.badBg : "rgba(167,156,247,.055)")}; }
   .top { display: flex; align-items: center; gap: 10px; }
-  .ico { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; background: ${({ $gate }) => ($gate ? c.badBg : "rgba(155,140,255,0.14)")}; }
+  .ico { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: ${({ $gate }) => ($gate ? c.bad : c.accent2)}; border: 1px solid ${({ $gate }) => ($gate ? "rgba(238,119,119,.35)" : c.lineStrong)}; background: ${c.surface}; transition:transform .25s cubic-bezier(.22,.7,.2,1), background .25s ease; }
+  .ico svg { width: 19px; height: 19px; }
+  &:hover .ico { transform:translateY(-3px) rotate(-4deg) scale(1.06); background:${({ $gate }) => ($gate ? c.badBg : "rgba(167,156,247,.1)")}; }
   .n { font-family: ${c.mono}; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: ${({ $gate }) => ($gate ? c.bad : c.accent2)}; }
-  .t { font-family: ${c.display}; font-size: 19px; font-weight: 700; margin: 14px 0 8px; letter-spacing: -0.01em; }
+  .t { font-family: ${c.display}; font-size: 19px; font-weight: 600; margin: 20px 0 8px; letter-spacing: -0.015em; }
   .d { font-size: 13px; line-height: 1.55; color: ${c.muted}; }
   .badge { display: inline-flex; align-items: center; gap: 6px; ${tele}; color: ${c.bad}; margin-top: auto; padding-top: 12px; .dot { width: 6px; height: 6px; border-radius: 50%; background: ${c.bad}; animation: ${kfPulse} 1.6s ease-in-out infinite; } }
+  .hint { position:absolute; left:10px; right:10px; bottom:10px; padding:8px 10px; border-radius:8px; background:${c.paper}; color:${c.bgDeep}; font:500 10px ${c.mono}; line-height:1.35; opacity:0; transform:translateY(5px); transition:opacity .2s ease, transform .2s ease; pointer-events:none; box-shadow:0 10px 24px rgba(0,0,0,.3); }
+  &:hover .hint, &:focus-within .hint { opacity:1; transform:translateY(0); }
 `;
 
 const PAINS = [
@@ -66,12 +69,12 @@ const PAINS = [
   "staying compliant so a message never crosses a legal line",
 ];
 const STAGES = [
-  { n: "01 · ingest", icon: "📥", t: "Read", d: "Pulls each invoice from CSV or Stripe into one clean, canonical shape. Agents never see a raw source." },
-  { n: "02 · strategy", icon: "🧭", t: "Decide", d: "Skip, wait, or chase? Picks the timing, tone, and channel for this specific invoice." },
-  { n: "03 · draft", icon: "✍️", t: "Write", d: "Gemini drafts the message in your voice: friendly, firm, or final notice." },
-  { n: "04 · gate", icon: "🛡️", t: "Check", d: "A deterministic compliance gate inspects every draft. Anything risky is blocked and escalated to you.", gate: true },
-  { n: "05 · send", icon: "📤", t: "Send", d: "Goes out from your own mailbox with the real payment link. First contact waits for your one-tap approval." },
-  { n: "06 · reconcile", icon: "✅", t: "Close", d: "Detects payment, records the success fee (never custodial), and loops back if it's still unpaid." },
+  { n: "01 · ingest", icon: "invoice" as LedgerIconName, t: "Read", d: "Pulls each invoice from CSV or Stripe into one clean, canonical shape. Agents never see a raw source.", hint: "why: source data is normalized at the edge" },
+  { n: "02 · strategy", icon: "strategy" as LedgerIconName, t: "Decide", d: "Skip, wait, or chase? Picks the timing, tone, and channel for this specific invoice.", hint: "decision: 21 days overdue → firm email" },
+  { n: "03 · draft", icon: "draft" as LedgerIconName, t: "Write", d: "Gemini drafts the message in your voice: friendly, firm, or final notice.", hint: "grounded by: the tenant voice profile" },
+  { n: "04 · gate", icon: "gate" as LedgerIconName, t: "Check", d: "A deterministic compliance gate inspects every draft. Anything risky is blocked and escalated to you.", hint: "hard rule: risky language never passes", gate: true },
+  { n: "05 · send", icon: "send" as LedgerIconName, t: "Send", d: "Goes out from your own mailbox with the real payment link. First contact waits for your one-tap approval.", hint: "approval: required on the first touch" },
+  { n: "06 · reconcile", icon: "reconcile" as LedgerIconName, t: "Close", d: "Detects payment, records the success fee (never custodial), and loops back if it's still unpaid.", hint: "event: verified payment closes the loop" },
 ];
 
 export default function Explainer() {
@@ -115,12 +118,13 @@ export default function Explainer() {
             <Reveal key={s.n} delay={i * 0.07} style={{ height: "100%" }}>
               <Stage $gate={s.gate} onMouseMove={spotlightMove}>
                 <div className="top">
-                  <span className="ico" aria-hidden="true">{s.icon}</span>
+                  <span className="ico"><LedgerIcon name={s.icon} /></span>
                   <span className="n">{s.n}</span>
                 </div>
                 <div className="t">{s.t}</div>
                 <div className="d">{s.d}</div>
                 {s.gate && <div className="badge"><span className="dot" />the hard line</div>}
+                <div className="hint" role="tooltip">{s.hint}</div>
               </Stage>
             </Reveal>
           ))}

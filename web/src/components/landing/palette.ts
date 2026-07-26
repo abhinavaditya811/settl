@@ -1,60 +1,67 @@
-// Bespoke art direction for the landing ("Mission Control" — dark, cinematic,
-// glassmorphism). Self-contained so the marketing page isn't tied to the dashboard
-// theme tokens. Colors are literal on purpose — this is a crafted surface.
+// "Operational Ledger" art direction: editorial finance typography, precise rules,
+// restrained depth, and semantic state colors. Self-contained so the marketing page
+// can evolve independently from the dashboard theme.
 
 import { css, keyframes } from "styled-components";
 
-export const kfPulse = keyframes`0%,100%{opacity:1}50%{opacity:.4}`;
+export const kfPulse = keyframes`0%,100%{opacity:1}50%{opacity:.58}`;
 export const kfScan = keyframes`0%{transform:translateX(-100%)}100%{transform:translateX(180%)}`;
-export const kfRing = keyframes`0%{box-shadow:0 0 0 0 rgba(70,211,154,.5)}70%,100%{box-shadow:0 0 0 6px rgba(70,211,154,0)}`;
+export const kfRing = keyframes`0%{box-shadow:0 0 0 0 rgba(119,215,170,.38)}70%,100%{box-shadow:0 0 0 7px rgba(119,215,170,0)}`;
 
 export const c = {
-  bg: "#0a0b10",
-  bgDeep: "#070709",
-  ink: "#f4f5fa",
-  muted: "#9aa0ae",
-  faint: "#6b7080",
-  accent: "#6d5ef6",
-  accent2: "#9b8cff",
-  line: "rgba(255,255,255,0.08)",
-  glassBg: "rgba(255,255,255,0.045)",
-  glassBorder: "rgba(255,255,255,0.10)",
-  ok: "#46d39a", okBg: "rgba(70,211,154,0.13)",
-  warn: "#e8b84b", warnBg: "rgba(232,184,75,0.13)",
-  bad: "#ff6b6b", badBg: "rgba(255,107,107,0.13)",
+  bg: "#0c0d0c",
+  bgDeep: "#080908",
+  surface: "#121412",
+  surfaceRaised: "#171917",
+  paper: "#f0ede4",
+  ink: "#f2f0e9",
+  muted: "#aaa9a2",
+  faint: "#74766f",
+  accent: "#7769e8",
+  accent2: "#a79cf7",
+  line: "rgba(240,237,228,0.11)",
+  lineStrong: "rgba(240,237,228,0.2)",
+  glassBg: "rgba(18,20,18,0.82)",
+  glassBorder: "rgba(240,237,228,0.13)",
+  ok: "#77d7aa", okBg: "rgba(119,215,170,0.12)",
+  warn: "#e6ba68", warnBg: "rgba(230,186,104,0.12)",
+  bad: "#ee7777", badBg: "rgba(238,119,119,0.12)",
   display: "var(--font-display), system-ui, sans-serif",
   body: "var(--font-body), system-ui, sans-serif",
   mono: "var(--font-mono), ui-monospace, monospace",
 };
 
-// Frosted-glass panel. Needs the ambient glow behind it to blur against.
+// Primary product surface: mostly opaque and precise; blur is supporting detail.
 export const glass = css`
   background: ${c.glassBg};
-  backdrop-filter: blur(22px) saturate(1.4);
-  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
   border: 1px solid ${c.glassBorder};
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 30px 70px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 24px 70px rgba(0,0,0,0.32);
 `;
 
-// Small uppercase mono "telemetry" label — the mission-control signature.
+// Ledger notation: reserved for IDs, timestamps, states, and section indices.
 export const tele = css`
   font-family: ${c.mono};
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: ${c.faint};
 `;
 
-// Standard vertical rhythm between major landing sections. Sections are sized to
-// their content (never stretched to the viewport) — dense and intentional beats big
-// empty screens. Tune the single value here to re-pace the whole page at once.
 export const screen = css`
-  padding: 104px 0 0;
+  padding: 124px 0 0;
+  @media (max-width: 720px) { padding-top: 88px; }
 `;
 
-// Card cursor-glow: a soft radial highlight that follows the pointer across the card
-// (pair with spotlightMove() from anim as onMouseMove). Uses ::after so it composes
-// with a card's own ::before; --mx/--my default to the top-center before first move.
+export const focusRing = css`
+  &:focus-visible {
+    outline: 2px solid ${c.accent2};
+    outline-offset: 3px;
+  }
+`;
+
+// Used selectively on interactive product artifacts, not every container.
 export const spotGlow = css`
   position: relative;
   overflow: hidden;
@@ -65,7 +72,7 @@ export const spotGlow = css`
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.35s ease;
-    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0%), rgba(155, 140, 255, 0.16), transparent 55%);
+    background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 0%), rgba(167,156,247,0.11), transparent 58%);
   }
   &:hover::after { opacity: 1; }
 `;

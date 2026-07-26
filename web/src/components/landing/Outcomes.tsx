@@ -7,7 +7,7 @@
 
 import styled from "styled-components";
 import { motion } from "framer-motion";
-import { c, glass, tele, screen, spotGlow } from "./palette";
+import { c, tele, screen, spotGlow } from "./palette";
 import { Reveal, Counter, spotlightMove } from "./anim";
 
 const Section = styled.section`${screen};`;
@@ -15,15 +15,23 @@ const Kicker = styled.div`${tele}; color: ${c.accent2};`;
 const H2 = styled.h2`font-family: ${c.display}; font-size: clamp(32px, 5vw, 52px); line-height: 1.0; letter-spacing: -0.035em; font-weight: 700; margin: 12px 0 0; max-width: 18ch;`;
 const Lead = styled.p`font-size: 16px; line-height: 1.65; color: ${c.muted}; max-width: 56ch; margin: 16px 0 0;`;
 
-const Stats = styled.div`display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 40px; align-items: stretch; @media (max-width: 820px) { grid-template-columns: 1fr; }`;
+const Stats = styled.div`
+  display: grid; grid-template-columns: 1.35fr 1fr 1fr; margin-top: 44px; align-items: stretch;
+  border-top: 1px solid ${c.lineStrong}; border-bottom: 1px solid ${c.lineStrong};
+  > div + div { border-left: 1px solid ${c.line}; }
+  @media (max-width: 820px) {
+    grid-template-columns: 1fr;
+    > div + div { border-left: none; border-top: 1px solid ${c.line}; }
+  }
+`;
 const Card = styled.div`
-  ${glass}; border-radius: 18px; padding: 26px 24px; position: relative; overflow: hidden;
+  padding: 32px 26px; position: relative; overflow: hidden;
   display: flex; flex-direction: column;
   ${spotGlow};
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-  &:hover { transform: translateY(-6px); border-color: rgba(155,140,255,0.55); box-shadow: 0 24px 60px rgba(0,0,0,0.4); }
+  transition: background 0.25s ease;
+  &:hover { background: rgba(255,255,255,.025); }
   .cap { ${tele}; color: ${c.accent2}; position: relative; }
-  .big { font-family: ${c.display}; font-size: 52px; font-weight: 700; letter-spacing: -0.035em; color: ${c.ink}; line-height: 1; margin-top: 12px; position: relative; span { color: ${c.accent2}; } }
+  .big { font-family: ${c.display}; font-size: 52px; font-weight: 600; letter-spacing: -0.045em; color: ${c.ink}; line-height: 1; margin-top: 16px; position: relative; span { color: ${c.accent2}; } }
   .lbl { font-size: 14.5px; color: ${c.ink}; margin-top: 12px; font-weight: 500; position: relative; }
   .sub { ${tele}; color: ${c.faint}; margin-top: 5px; position: relative; }
   .viz { margin-top: auto; padding-top: 22px; position: relative; }
@@ -43,7 +51,7 @@ const Blocks = styled.div`display: flex; flex-wrap: wrap; gap: 5px; max-width: 2
   span { width: 13px; height: 13px; border-radius: 4px; background: linear-gradient(135deg, ${c.accent2}, ${c.accent}); }
 `;
 const Freed = styled.div`${tele}; color: ${c.faint}; margin-top: 11px;`;
-const Note = styled.div`${tele}; color: ${c.faint}; margin-top: 22px;`;
+const DemoLabel = styled.div`${tele}; color: ${c.faint}; margin-top: 16px; text-align: right;`;
 
 // Compliance ring that draws itself to a full circle.
 function Ring() {
@@ -125,7 +133,7 @@ export default function Outcomes() {
           </Card>
         </Reveal>
       </Stats>
-      <Note>illustrative: the demo runs on synthetic invoices, with no real money figures</Note>
+      <DemoLabel>Demo data</DemoLabel>
     </Section>
   );
 }
