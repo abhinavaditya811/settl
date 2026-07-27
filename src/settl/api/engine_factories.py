@@ -7,31 +7,58 @@ from __future__ import annotations
 
 import os
 
+from settl.api.oauth_google import google_oauth_enabled
 from settl.audit import ExecutionLog
 from settl.compliance.gate import ComplianceResult
-from settl.schema.invoice import Channel, Invoice
 from settl.sending import GmailSmtpSender, MockSender, Sender
 from settl.sending.base import SendOutcome
+from settl.sending.gmail_api_sender import GmailApiSender
+from settl.schema.invoice import Channel, Invoice
+
+
+class _PerTenantOrSharedSender:
+    """Prefers each tenant's OWN connected Gmail (gmail.send scope) so a debtor
+    sees mail genuinely from their vendor, not from one shared account; falls
+    back to the shared SMTP sender for a tenant that hasn't connected Gmail
+    yet. Checked per-invoice (not once at construction) since one Orchestrator
+    instance handles every tenant's invoices."""
+
+    def __init__(self, per_tenant: GmailApiSender, shared: Sender) -> None:
+        self._per_tenant = per_tenant
+        self._shared = shared
+
+    def send(
+        self,
+        invoice: Invoice,
+        message: str,
+        compliance: ComplianceResult,
+        channel: Channel | None = None,
+    ) -> SendOutcome:
+        sender = self._shared if self._per_tenant.token_for(invoice.tenant_id) is None else self._per_tenant
+        return sender.send(invoice, message, compliance, channel)
 
 
 def make_sender(log: ExecutionLog, *, extra_gate: str | None = None) -> Sender:
     """Real Gmail sender, sending to each invoice's own debtor contact, when
     SETTL_LIVE_SEND is armed AND (no extra_gate, or that env var is separately
-    set to "1"); mock otherwise. The approval path is gated by SETTL_LIVE_SEND
-    alone - no forced test-recipient redirect here (that was previously a hard
-    requirement for arming live send at all, which also meant every real
-    tenant's approvals got silently redirected to one fixed inbox instead of
-    their actual debtor - see the demo-tenant sender below for where a forced
-    redirect still legitimately belongs, on synthetic data). Every UNATTENDED
-    path (batch, inbound auto-reply) passes its own extra_gate so going live
-    there needs a second, deliberate opt-in - see state.py's docstring for why
-    that split exists."""
+    set to "1"); mock otherwise. Prefers each tenant's own connected Gmail
+    (GmailApiSender) over the shared SMTP account, for any tenant that has
+    connected one - see _PerTenantOrSharedSender. No forced test-recipient
+    redirect here (that was previously a hard requirement for arming live send
+    at all, which also meant every real tenant's approvals got silently
+    redirected to one fixed inbox instead of their actual debtor - see the
+    demo-tenant sender below for where a forced redirect still legitimately
+    belongs, on synthetic data). Every UNATTENDED path (batch, inbound
+    auto-reply) passes its own extra_gate so going live there needs a second,
+    deliberate opt-in - see state.py's docstring for why that split exists."""
     if extra_gate is not None and os.environ.get(extra_gate) != "1":
         return MockSender(log=log)
     if os.environ.get("SETTL_LIVE_SEND") == "1":
-        sender = GmailSmtpSender(log=log)
-        if sender.configured:
-            return sender
+        shared = GmailSmtpSender(log=log)
+        if shared.configured:
+            if google_oauth_enabled():
+                return _PerTenantOrSharedSender(GmailApiSender(log=log), shared)
+            return shared
     return MockSender(log=log)
 
 
@@ -99,7 +126,8 @@ def is_live(sender: Sender) -> bool:
     """Whether ``sender`` ultimately delivers for real - unwraps the demo-tenant
     guard above so state.py's live_send_enabled/inbound_reply_live_enabled can
     see through it to the underlying sender."""
-    return isinstance(getattr(sender, "_real", sender), GmailSmtpSender)
+    real = getattr(sender, "_real", sender)
+    return isinstance(real, (GmailSmtpSender, _PerTenantOrSharedSender))
 
 
 def gemini_enabled() -> bool:

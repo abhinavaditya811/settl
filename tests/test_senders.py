@@ -137,6 +137,69 @@ def test_gmail_sender_sends_on_pass_with_mocked_smtp(monkeypatch):
     assert sent["host"] == "smtp.gmail.com"
 
 
+# --- per-tenant Gmail API sender (vs. the one shared SMTP account) ----------
+
+
+def test_per_tenant_sender_falls_back_to_shared_when_no_gmail_connected(monkeypatch):
+    from settl.api.engine_factories import _PerTenantOrSharedSender
+    from settl.sending.gmail_api_sender import GmailApiSender
+
+    monkeypatch.delenv("SETTL_TOKEN_ENCRYPTION_KEY", raising=False)  # token_for() short-circuits None
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, u, p): pass
+        def send_message(self, msg): sent["to"] = msg["To"]
+
+    monkeypatch.setattr("smtplib.SMTP_SSL", FakeSMTP)
+    shared = GmailSmtpSender(user="me@gmail.com", app_password="pw")
+    per_tenant = GmailApiSender(client_id="cid", client_secret="csecret")
+    sender = _PerTenantOrSharedSender(per_tenant, shared)
+
+    out = sender.send(_invoice(contact="ap@acme.test"), "pay please", PASS, Channel.EMAIL)
+    assert out.sent is True
+    assert sent["to"] == "ap@acme.test"  # went via the shared SMTP sender, to the real debtor
+
+
+def test_per_tenant_sender_uses_tenants_own_gmail_when_connected(monkeypatch):
+    from settl.api.engine_factories import _PerTenantOrSharedSender
+    from settl.sending import gmail_api_sender as gas_module
+
+    monkeypatch.setattr(gas_module.token_crypto, "token_encryption_enabled", lambda: True)
+    monkeypatch.setattr(
+        gas_module.tokens, "load_token",
+        lambda tenant_id, provider="google": ("encrypted-blob", [gas_module.GMAIL_SEND_SCOPE]),
+    )
+    monkeypatch.setattr(gas_module.token_crypto, "decrypt", lambda ciphertext, **kw: "real-refresh-token")
+
+    sent_calls = []
+
+    class FakeGmailClient:
+        def __init__(self, **kwargs): pass
+        def send_new(self, *, to, from_address, subject, body_text):
+            sent_calls.append(to)
+            return "<message-id@mail.gmail.com>"
+
+    monkeypatch.setattr(gas_module, "GmailClient", FakeGmailClient)
+
+    per_tenant = gas_module.GmailApiSender(client_id="cid", client_secret="csecret")
+    shared = GmailSmtpSender(user="me@gmail.com", app_password="pw")
+
+    def explode(*a, **k):  # pragma: no cover - must not be called
+        raise AssertionError("shared SMTP sender must not be used when tenant has connected Gmail")
+
+    monkeypatch.setattr(shared, "_deliver", explode)
+
+    sender = _PerTenantOrSharedSender(per_tenant, shared)
+    out = sender.send(_invoice(contact="ap@acme.test"), "pay please", PASS, Channel.EMAIL)
+    assert out.sent is True
+    assert sent_calls == ["ap@acme.test"]
+    assert "tenant's own Gmail" in out.detail
+
+
 # --- human approval action ---------------------------------------------------
 
 

@@ -123,11 +123,33 @@ class GmailClient:
         msg["In-Reply-To"] = in_reply_to_message_id
         msg["References"] = in_reply_to_message_id
         msg.set_content(body_text)
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+        return self._send(msg, thread_id=thread_id)
 
-        result = self._request(
-            "post", "/users/me/messages/send", json={"raw": raw, "threadId": thread_id}
-        )
+    def send_new(
+        self,
+        *,
+        to: str,
+        from_address: str,
+        subject: str,
+        body_text: str,
+    ) -> str | None:
+        """Send a fresh message with no existing thread to attach to - first
+        contact, or any send outside an inbound-reply conversation. Returns the
+        new Message-ID, or None if the send failed (same fail-safe shape as
+        send_reply)."""
+        msg = EmailMessage()
+        msg["To"] = to
+        msg["From"] = from_address
+        msg["Subject"] = subject
+        msg.set_content(body_text)
+        return self._send(msg)
+
+    def _send(self, msg: EmailMessage, *, thread_id: str | None = None) -> str | None:
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+        body: dict[str, Any] = {"raw": raw}
+        if thread_id is not None:
+            body["threadId"] = thread_id
+        result = self._request("post", "/users/me/messages/send", json=body)
         if result is None:
             return None
         # The send response doesn't echo the Message-ID header - fetch it once,

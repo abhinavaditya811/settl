@@ -14,10 +14,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Third-party deps only (matches pyproject base + [api] extras). We do not
-# install the local package, so settl is imported from /app/src.
+# Third-party deps only (matches pyproject base + [api]/[gemini]/[stripe]/[db]
+# extras). We do not install the local package, so settl is imported from
+# /app/src.
+#
 # cryptography is required at import time (settl.security.token_crypto uses
 # cryptography.fernet at module load, pulled in via oauth_routes -> oauth_google).
+# google-auth-oauthlib is ALSO required at import time via that same chain
+# (oauth_google.py's Google OAuth Flow) - unlike stripe/google-genai below,
+# missing it is NOT caught anywhere and 500s the /oauth/google/authorize route
+# outright (observed live: ModuleNotFoundError: No module named
+# 'google_auth_oauthlib'). requests is used by the Gmail REST client
+# (settl.gmail) for inbound-reply reading.
 # stripe/google-genai are lazy-imported (engine_factories.make_minter/make_drafter)
 # and BOTH fail silently when missing (StripeLinkMinter.mint's except Exception:
 # return None, and the Gemini path's own fallback) - so a missing package here
@@ -30,6 +38,9 @@ RUN pip install --no-cache-dir \
     "uvicorn[standard]>=0.29" \
     "psycopg[binary]>=3.1" \
     "cryptography>=42.0" \
+    "google-auth>=2.30" \
+    "google-auth-oauthlib>=1.2" \
+    "requests>=2.31" \
     "stripe>=9.0" \
     "google-genai>=1.0"
 
