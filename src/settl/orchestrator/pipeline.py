@@ -33,6 +33,7 @@ from settl.agents.strategy import Action, StrategyAgent, StrategyDecision
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
 from settl.compliance.gate import ComplianceResult, GateDecision
+from settl.compliance.rules import VoiceContext
 from settl.governance import RuleStore, guardrail_violations
 from settl.orchestrator.result import PipelineResult, PipelineStep, TerminalState
 from settl.schema.invoice import Channel, Invoice
@@ -218,7 +219,12 @@ class Orchestrator:
         return self._run_chase(invoice, decision, steps)
 
     def approve_and_send(
-        self, invoice: Invoice, message: str, channel: Channel | None = None
+        self,
+        invoice: Invoice,
+        message: str,
+        channel: Channel | None = None,
+        *,
+        voice: VoiceContext | None = None,
     ) -> PipelineResult:
         """Human one-tap approval of a draft that was held for first-contact sign-off.
 
@@ -227,11 +233,11 @@ class Orchestrator:
         the approval is refused and the message escalates. This is the single path
         a first-contact message can legitimately reach the sender; the dashboard's
         approve button calls exactly this."""
-        # Gate is channel-aware: a voice approval runs the voice rules too. Until a
-        # per-debtor consent source is wired (Phase 3), a VOICE send has no
-        # VoiceContext here, so the gate fails safe (VOICE_NO_CONSENT → escalate)
-        # rather than clear a call whose consent/disclosure was never checked.
-        result = self._gate.evaluate(invoice, message, channel=channel)
+        # Gate is channel-aware: a voice approval runs the voice rules too. Callers
+        # placing a call pass a ``voice`` context (consent, dial time); without one
+        # the gate fails safe (VOICE_NO_CONSENT → escalate) rather than clear a
+        # call whose consent/disclosure was never checked.
+        result = self._gate.evaluate(invoice, message, channel=channel, voice=voice)
         steps = [PipelineStep("compliance_gate", result.decision.value, result.reasoning)]
         other = set(result.codes) - {_APPROVAL_CODE}
         if other:
@@ -259,6 +265,18 @@ class Orchestrator:
                 detail=outcome.detail,
             )
         steps.append(PipelineStep("sender", "sent", outcome.detail))
+        if channel is Channel.VOICE:
+            # A voice message is CallScript.full: spoken script + a companion SMS
+            # line carrying {{payment_link}} (a URL is never spoken). The gate
+            # cleared the full script, so the SMS leg reuses the same result - the
+            # sender still resolves/hard-fails the link on its own.
+            _, _, sms = message.partition("\n")
+            if sms.strip():
+                sms_outcome = self._sender.send(invoice, sms.strip(), approved, Channel.SMS)
+                steps.append(PipelineStep(
+                    "sender", "sent" if sms_outcome.sent else "withheld",
+                    f"companion SMS: {sms_outcome.detail}",
+                ))
         return PipelineResult(
             invoice.invoice_id, TerminalState.SENT, steps=steps,
             message=message, channel=channel.value if channel else None,

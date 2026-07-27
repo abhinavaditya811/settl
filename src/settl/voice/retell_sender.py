@@ -33,7 +33,7 @@ import urllib.request
 from settl.audit.execution_log import ExecutionLog
 from settl.config import load_dotenv
 from settl.schema.invoice import Channel, Invoice
-from settl.sending.base import GatedSender
+from settl.sending.base import DeliveryFailed, GatedSender
 from settl.voice.registry import DialLedger
 
 _API_URL = "https://api.retellai.com/v2/create-phone-call"
@@ -41,11 +41,17 @@ _TIMEOUT_SECS = 30
 
 
 class MissingTelephonyConfig(RuntimeError):
-    """Raised when the Retell env vars needed to place a call are not set."""
+    """Raised when the Retell env vars needed to place a call are not set.
+    Deliberately NOT a ``DeliveryFailed``: misconfiguration fails loud (same as
+    email's ``MissingCredentials``), and the factory never selects this sender
+    without ``.configured`` anyway."""
 
 
-class CallFailed(RuntimeError):
-    """Retell refused or failed to register the outbound call."""
+class CallFailed(DeliveryFailed):
+    """Retell refused or failed to register the outbound call. A ``DeliveryFailed``
+    so ``GatedSender.send`` reports the invoice as withheld instead of letting a
+    provider 4xx/5xx crash the batch or an approval request (email precedent:
+    ``GmailSmtpSender`` wraps SMTP failures the same way)."""
 
 
 class AlreadyDialed(CallFailed):

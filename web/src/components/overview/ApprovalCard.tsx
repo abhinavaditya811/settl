@@ -201,6 +201,7 @@ export interface ApprovalCardProps {
   busy: boolean;
   requestEdit?: number;
   onApprove: (id: string, message?: string) => void;
+  onCall: (id: string, message?: string) => void;
   onSkip: (id: string) => void;
   onHold: (id: string) => void;
 }
@@ -211,6 +212,7 @@ export default function ApprovalCard({
   busy,
   requestEdit,
   onApprove,
+  onCall,
   onSkip,
   onHold,
 }: ApprovalCardProps) {
@@ -329,6 +331,12 @@ export default function ApprovalCard({
         >
           {busy ? "Sending…" : "Approve & send"}
           {!busy && <kbd>A</kbd>}
+        </Btn>
+        <Btn
+          disabled={busy || !detail}
+          onClick={() => onCall(invoice.invoice_id, dirty ? text : undefined)}
+        >
+          {busy ? "Calling…" : "Call"}
         </Btn>
         {editing ? (
           <Btn onClick={() => setEditing(false)}>Done editing</Btn>

@@ -14,6 +14,9 @@ from settl.sending import GmailSmtpSender, MockSender, Sender
 from settl.sending.base import SendOutcome
 from settl.sending.gmail_api_sender import GmailApiSender
 from settl.schema.invoice import Channel, Invoice
+from settl.voice.registry import DialLedger
+from settl.voice.retell_sender import RetellVoiceSender
+from settl.voice.sender import MockVoiceSender
 
 
 class _PerTenantOrSharedSender:
@@ -38,7 +41,64 @@ class _PerTenantOrSharedSender:
         return sender.send(invoice, message, compliance, channel)
 
 
+class _ChannelRoutingSender:
+    """Routes a VOICE send to the (mock) voice sender; every other channel keeps
+    the written sender chosen by the flags below. Without this, a voice decision
+    silently fell through to the email sender, which hard-codes emailing
+    ``debtor_email`` regardless of channel. Voice stays mock-first, exactly like
+    email did until a pilot signed - a live Retell branch would mirror the
+    ``SETTL_LIVE_SEND`` + ``.configured`` check below when one is warranted."""
+
+    def __init__(self, written: Sender, voice: Sender) -> None:
+        self._default = written
+        self._voice = voice
+
+    def send(
+        self,
+        invoice: Invoice,
+        message: str,
+        compliance: ComplianceResult,
+        channel: Channel | None = None,
+    ) -> SendOutcome:
+        sender = self._voice if channel is Channel.VOICE else self._default
+        return sender.send(invoice, message, compliance, channel)
+
+
 def make_sender(log: ExecutionLog, *, extra_gate: str | None = None) -> Sender:
+    """The written sender below plus voice routing: a VOICE send goes to the voice
+    sender (mock by default, live Retell when armed - see _make_voice_sender),
+    everything else to the email/mock sender the live-send flags select."""
+    return _ChannelRoutingSender(
+        _make_written_sender(log, extra_gate=extra_gate), _make_voice_sender(log)
+    )
+
+
+def _make_voice_sender(log: ExecutionLog | None) -> Sender:
+    """Mock voice sender ("would call") by default. A live Retell sender only when
+    ALL of these hold, mirroring how email arms live sending:
+
+      * SETTL_LIVE_SEND_VOICE=1 - its own deliberate opt-in, separate from email's
+        SETTL_LIVE_SEND (arming email must not silently start dialing phones);
+      * SETTL_TEST_CALL_NUMBER is set - every live dial redirects to the operator's
+        own consented phone. Until per-debtor consent capture exists (VOICE_AGENT_SPEC
+        §10), dialing a debtor's real number would fabricate the consent the gate is
+        told about, so the redirect is REQUIRED, not optional;
+      * the Retell env triad (RETELL_API_KEY / RETELL_FROM_NUMBER / RETELL_AGENT_ID)
+        is configured.
+
+    The sender gets its own DialLedger, so a double-click on the Call button is
+    refused as withheld ("already dialed") instead of ringing twice."""
+    test_number = os.environ.get("SETTL_TEST_CALL_NUMBER")
+    if os.environ.get("SETTL_LIVE_SEND_VOICE") == "1" and test_number:
+        live = RetellVoiceSender(
+            log=log, force_recipient=test_number, ledger=DialLedger()
+        )
+        if live.configured:
+            return live
+    return MockVoiceSender(log=log)
+
+
+def _make_written_sender(log: ExecutionLog, *, extra_gate: str | None = None) -> Sender:
     """Real Gmail sender, sending to each invoice's own debtor contact, when
     SETTL_LIVE_SEND is armed AND (no extra_gate, or that env var is separately
     set to "1"); mock otherwise. Prefers each tenant's own connected Gmail
@@ -106,10 +166,20 @@ def guard_demo_tenants(sender: Sender, log: ExecutionLog) -> Sender:
     your own invoices with ~25 synthetic seed sends. Falls back to the shared
     sender if the demo-specific pair isn't set."""
     if os.environ.get("SETTL_LIVE_SEND_DEMO") == "1":
-        return _demo_sender(log) or sender
+        demo = _demo_sender(log)
+        if demo is not None:
+            # The demo-specific email sender still needs voice routing, or a
+            # demo-tenant call would fall through to email (the pre-routing bug).
+            return _ChannelRoutingSender(demo, _make_voice_sender(log))
+        return sender
     from settl.api.identity import demo_tenant_ids
 
-    return _DemoGuardSender(sender, MockSender(log=log), demo_tenant_ids())
+    # The demo fallback routes channels too, so a demo-tenant voice call still
+    # shows as "would CALL" rather than a generic "would send" - both branches
+    # are mocks (never the live Retell sender: a public /demo visitor must not
+    # be able to burn call credit), so the never-live guarantee is unchanged.
+    mock = _ChannelRoutingSender(MockSender(log=log), MockVoiceSender(log=log))
+    return _DemoGuardSender(sender, mock, demo_tenant_ids())
 
 
 def _demo_sender(log: ExecutionLog) -> Sender | None:
@@ -124,9 +194,11 @@ def _demo_sender(log: ExecutionLog) -> Sender | None:
 
 def is_live(sender: Sender) -> bool:
     """Whether ``sender`` ultimately delivers for real - unwraps the demo-tenant
-    guard above so state.py's live_send_enabled/inbound_reply_live_enabled can
-    see through it to the underlying sender."""
+    guard and the channel-routing wrapper above so state.py's
+    live_send_enabled/inbound_reply_live_enabled can see through them to the
+    underlying written sender (voice is always mock, so it never counts)."""
     real = getattr(sender, "_real", sender)
+    real = getattr(real, "_default", real)
     return isinstance(real, (GmailSmtpSender, _PerTenantOrSharedSender))
 
 

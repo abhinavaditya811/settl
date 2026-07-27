@@ -24,7 +24,6 @@ from settl.schema.invoice import (
 from settl.sending.mock_sender import MockSender
 from settl.tenancy.config import Audio, TenantConfig, audio_with
 from settl.voice import (
-    AlreadyDialed,
     ConsentStore,
     DialLedger,
     DoNotCallRegistry,
@@ -142,8 +141,10 @@ def test_ledger_refuses_a_second_dial_same_day(monkeypatch):
     inv = voice_invoice()
     out = sender.send(inv, _script().full, PASS, Channel.VOICE)
     assert out.sent is True and len(calls) == 1
-    with pytest.raises(AlreadyDialed):
-        sender.send(inv, _script().full, PASS, Channel.VOICE)
+    # AlreadyDialed is a DeliveryFailed: the second attempt comes back withheld
+    # (never a crash - a double-click on the Call button must not 500).
+    again = sender.send(inv, _script().full, PASS, Channel.VOICE)
+    assert again.sent is False and "already dialed" in again.detail
     assert len(calls) == 1  # the second dial never reached Retell
 
 

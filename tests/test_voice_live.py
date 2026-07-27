@@ -100,9 +100,11 @@ def test_live_sender_requires_config_on_pass(monkeypatch):
         sender.send(_invoice(), _script().full, PASS, Channel.VOICE)
 
 
-def test_live_sender_surfaces_a_retell_rejection(monkeypatch):
-    from settl.voice import CallFailed
-
+def test_live_sender_surfaces_a_retell_rejection_as_withheld(monkeypatch):
+    # CallFailed is a DeliveryFailed: a provider rejection becomes a withheld
+    # outcome (never SENT, never a crash) - a Retell 4xx/5xx must not 500 an
+    # approval request or take down a batch, same as an SMTP failure on email.
     _fake_request(monkeypatch, status=402, body=b'{"error": "out of credit"}')
-    with pytest.raises(CallFailed, match="402"):
-        _sender().send(_invoice(), _script().full, PASS, Channel.VOICE)
+    out = _sender().send(_invoice(), _script().full, PASS, Channel.VOICE)
+    assert out.sent is False
+    assert "402" in out.detail and "delivery failed" in out.detail

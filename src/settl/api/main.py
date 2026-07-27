@@ -11,6 +11,7 @@ here - the orchestrator, gate, and sender remain the authorities. Routes:
     GET  /invoices/{id}             one invoice: card + draft + pipeline steps
     GET  /invoices/{id}/trace       the audit-log timeline for one invoice
     POST /invoices/{id}/approve     approve a held draft (optional edited message)
+    POST /invoices/{id}/call        place a (mock) voice call for a held draft
     POST /invoices/{id}/flag        flag a decision → guardrail + re-orchestrate
     GET  /guardrails                the stored operator guardrails
     GET/POST /invoices/{id}/payment-plan/*    offer/reoffer/decide (api/payment_plan_routes.py)
@@ -227,6 +228,25 @@ def approve(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse
     if not state.get(invoice_id):
         raise HTTPException(404, f"unknown invoice {invoice_id}")
     result = state.approve(invoice_id, body.message if body else None)
+    if result is None:
+        raise HTTPException(409, f"{invoice_id} is not awaiting approval")
+    return ApproveResponse(
+        invoice_id=invoice_id,
+        terminal_state=result.terminal_state.value,
+        detail=result.detail,
+        sent=result.terminal_state is TerminalState.SENT,
+        message=result.message,
+    )
+
+
+@app.post("/invoices/{invoice_id}/call", response_model=ApproveResponse)
+def place_call(invoice_id: str, body: ApproveBody | None = None) -> ApproveResponse:
+    """The Approvals tab's "Call" button: place a (mock) voice call for the held
+    draft instead of the written channel. Thin projector - BoardState frames the
+    call script and the gate/orchestrator decide everything (CLAUDE.md)."""
+    if not state.get(invoice_id):
+        raise HTTPException(404, f"unknown invoice {invoice_id}")
+    result = state.place_call(invoice_id, body.message if body else None)
     if result is None:
         raise HTTPException(409, f"{invoice_id} is not awaiting approval")
     return ApproveResponse(

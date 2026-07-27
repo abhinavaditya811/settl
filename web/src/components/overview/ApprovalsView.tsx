@@ -254,6 +254,7 @@ export default function ApprovalsView() {
                       }
                       requestEdit={q.editTick}
                       onApprove={q.handleApprove}
+                      onCall={q.handleCall}
                       onSkip={q.handleSkip}
                       onHold={q.handleHold}
                     />

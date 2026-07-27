@@ -226,11 +226,37 @@ def test_voice_context_for_pulls_window_from_audio():
 
 
 def test_orchestrator_voice_approval_fails_safe_without_consent():
-    # A voice approval flows the channel into the gate. With no per-debtor consent
-    # source wired yet (Phase 3), the gate escalates rather than clearing a call -
-    # a voice send can never slip through on email-only rules.
+    # A voice approval flows the channel into the gate. Without a VoiceContext
+    # (no consent source), the gate escalates rather than clearing a call - a
+    # voice send can never slip through on email-only rules.
     log = ExecutionLog()
     orch = Orchestrator(log=log, sender=MockVoiceSender(log=log))
     res = orch.approve_and_send(_invoice(), _script().full, Channel.VOICE)
     assert res.terminal_state is TerminalState.ESCALATED
     assert "VOICE_NO_CONSENT" in res.detail
+
+
+def test_orchestrator_voice_approval_with_consent_dials_and_texts_the_link():
+    # With a consent-carrying VoiceContext the gate clears the call, the sender
+    # "dials" (mock), and the companion SMS leg carrying {{payment_link}} fires
+    # as its own send - one gate pass covering both legs (script.full contains
+    # the SMS line the gate already judged).
+    log = ExecutionLog()
+    orch = Orchestrator(log=log, sender=MockVoiceSender(log=log))
+    res = orch.approve_and_send(_invoice(), _script().full, Channel.VOICE, voice=_ctx())
+    assert res.terminal_state is TerminalState.SENT
+    assert "would CALL +15551234567" in res.detail
+    sms_steps = [s for s in res.steps if s.reasoning.startswith("companion SMS:")]
+    assert len(sms_steps) == 1 and sms_steps[0].decision == "sent"
+
+
+def test_orchestrator_voice_approval_outside_hours_never_dials():
+    # The same consent-carrying path still escalates when the dial time falls
+    # outside the tenant's call window - the button never overrides the gate.
+    log = ExecutionLog()
+    orch = Orchestrator(log=log, sender=MockVoiceSender(log=log))
+    res = orch.approve_and_send(
+        _invoice(), _script().full, Channel.VOICE, voice=_ctx(now=time(23, 30))
+    )
+    assert res.terminal_state is TerminalState.ESCALATED
+    assert "VOICE_OUTSIDE_HOURS" in res.detail

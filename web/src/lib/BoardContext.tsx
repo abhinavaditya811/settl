@@ -24,6 +24,7 @@ import { EMPTY_HEALTH, type EngineHealth } from "./health";
 import {
   approveInvoice,
   type BoardMode,
+  callInvoice,
   checkInboundMail,
   checkPayments,
   flagDecision,
@@ -54,6 +55,7 @@ interface BoardCtx {
   toast: Toast | null;
   refresh: (hard?: boolean) => Promise<void>;
   approve: (id: string, message?: string) => Promise<ApproveResponse | null>;
+  call: (id: string, message?: string) => Promise<ApproveResponse | null>;
   flag: (id: string, body: FlagRequest) => Promise<FlagResponse | null>;
   notify: (t: Toast) => void;
 }
@@ -179,6 +181,33 @@ export default function BoardProvider({
     [loadAll],
   );
 
+  // Same shape as approve above - the "Call" button is just an approval that
+  // asks for the voice channel; the engine re-gates and mock-dials server-side.
+  const call = useCallback(
+    async (id: string, message?: string) => {
+      setApprovingId(id);
+      try {
+        const res = await callInvoice(id, message);
+        await loadAll();
+        setToast(
+          res.sent
+            ? {
+                tone: "ok",
+                text: `Called ${id}. Call + SMS link logged in Activity.`,
+              }
+            : { tone: "err", text: `${id} not called · ${res.detail}` },
+        );
+        return res;
+      } catch (e) {
+        setToast({ tone: "err", text: `${id}: ${String((e as Error).message)}` });
+        return null;
+      } finally {
+        setApprovingId(null);
+      }
+    },
+    [loadAll],
+  );
+
   const flag = useCallback(
     async (id: string, body: FlagRequest) => {
       setFlaggingId(id);
@@ -258,6 +287,7 @@ export default function BoardProvider({
     toast,
     refresh,
     approve,
+    call,
     flag,
     notify: setToast,
   };

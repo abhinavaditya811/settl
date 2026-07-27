@@ -350,6 +350,53 @@ def test_editable_approve_rejects_an_edited_message_that_breaks_a_rule():
     assert body["sent"] is False and body["terminal_state"] == "escalated"
 
 
+# --- the Call button (POST /invoices/{id}/call) -------------------------------
+
+
+def test_call_places_a_mock_voice_call_for_a_held_draft():
+    target = _an_awaiting_id()
+    r = client.post(f"/invoices/{target}/call")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["terminal_state"] == "sent" and body["sent"] is True
+    # The mock voice sender "dialed" - never the email sender.
+    assert "would CALL" in body["detail"]
+    # The draft was framed as a call script: AI disclosure first (gate-checked).
+    assert body["message"].startswith("Hi, this is an AI assistant")
+    # A URL is never spoken - the link travels only in the companion SMS line.
+    spoken = body["message"].partition("\n")[0]
+    assert "http" not in spoken
+    # No longer callable (or approvable) once handled.
+    assert client.post(f"/invoices/{target}/call").status_code == 409
+
+
+def test_call_rejects_an_edited_message_that_breaks_a_rule():
+    # The edit is framed as a script and re-gated - a threat cannot be dialed.
+    # Own BoardState (like the outbound-contact test above): earlier tests may
+    # have consumed every awaiting invoice on the shared client's board.
+    from settl.api.state import BoardState
+    from settl.orchestrator import TerminalState
+
+    board = BoardState()
+    target = next(
+        iid for iid, r in board._results.items()
+        if r.terminal_state is TerminalState.AWAITING_APPROVAL
+    )
+    res = board.place_call(
+        target, "Pay now or we will sue you and report you to collections."
+    )
+    assert res.terminal_state is TerminalState.ESCALATED
+
+
+def test_call_unknown_invoice_is_404():
+    assert client.post("/invoices/NOPE/call").status_code == 404
+
+
+def test_call_non_approvable_invoice_is_409():
+    # INV-003 is consumer debt → escalated, never approvable or callable.
+    assert client.post("/invoices/INV-003/call").status_code == 409
+
+
 # --- flag → guardrail → re-orchestrate --------------------------------------
 
 
