@@ -31,6 +31,7 @@ State is in-memory and per-process; a durable store is a later concern.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from pathlib import Path
 
@@ -55,9 +56,19 @@ from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import Channel, ContactDirection, Invoice, PriorContact
 from settl.tenancy.config import PaymentPlanTemplate
 
+# QUARANTINED (bad/unreadable rows - validate_invoice never reads anything
+# date-derived) and RECOVERED (already paid; reconcile handles payment truth
+# live via _apply_reconcile and self-heals via load_events() replay regardless)
+# are the only terminal states provably safe to skip reprocessing for. Every
+# other state (SKIPPED, HELD, SENT, AWAITING_APPROVAL, ESCALATED) has at least
+# one legitimate transition driven purely by the calendar (days_overdue/cooldown
+# elapsing, tone escalating) with zero underlying data change - caching those
+# would freeze that clock.
+_SAFE_TO_SKIP = frozenset({TerminalState.QUARANTINED, TerminalState.RECOVERED})
+
 
 class BoardState:
-    def __init__(self, log_path: str | Path | None = None) -> None:
+    def __init__(self, log_path: str | Path | None = None, auto_refresh: bool = True) -> None:
         load_dotenv()
         self._log = ExecutionLog(jsonl_path=log_path)
         # Mirror to Agent Engine observability when opted in; off by default (fail-safe).
@@ -93,6 +104,13 @@ class BoardState:
             live_reply_enabled=factories.is_live(inbound_reply_sender), plan_board=self._payment_plans,
         )
         self._results: dict[str, PipelineResult] = {}
+        # Fingerprint of each invoice's last-seen comparable data (see
+        # _invoice_signature) - persists ACROSS refreshes (unlike the reconcile
+        # correlation maps below, which are rebuilt fresh every call) so refresh()
+        # can tell "unchanged since last time" and skip reprocessing a _SAFE_TO_SKIP
+        # invoice's pipeline run entirely.
+        self._invoice_sig: dict[str, str] = {}
+        self._board_ready = False
         # Payment-event correlation + reconcile idempotency (see reconcile_ops.py).
         # Holds `_invoices`/`_results` by reference - refresh() mutates in place.
         self._reconcile = ReconciliationDesk(
@@ -103,7 +121,13 @@ class BoardState:
             results=self._results,
             tenant_of=self._tenant_of,
         )
-        self.refresh()
+        # Cloud Run cold starts: a fresh instance runs this whole __init__ before
+        # Uvicorn can accept a single request, and refresh() is a full Supabase load +
+        # sequential per-invoice pipeline (live Gemini calls included) - the single
+        # biggest cold-start cost. main.py opts out (auto_refresh=False) and instead
+        # awaits refresh_async() from its lifespan, off the startup critical path.
+        if auto_refresh:
+            self.refresh()
 
     # -- setup helpers --------------------------------------------------------
 
@@ -129,6 +153,13 @@ class BoardState:
     def supabase_enabled(self) -> bool:
         return db.supabase_enabled()
 
+    @property
+    def board_ready(self) -> bool:
+        """False until the first refresh() completes - lets the frontend tell a
+        genuinely-empty board apart from one that's still populating in the
+        background after a cold start (see main.py's lifespan)."""
+        return self._board_ready
+
     def _tenant_of(self, invoice_id: str) -> str | None:
         """The invoice's tenant, or None if unknown - execution-log entries and
         payment events are attributed to a tenant this way (they carry no tenant
@@ -137,6 +168,34 @@ class BoardState:
         return inv.tenant_id if inv else None
 
     # -- queries --------------------------------------------------------------
+
+    @staticmethod
+    def _invoice_signature(invoice: Invoice) -> str:
+        """Cheap fingerprint of exactly the fields validate_invoice/decide_strategy/
+        the compliance gate/drafting actually read. Deliberately EXCLUDES
+        as_of_date/days_overdue (set to date.today() on every real hydration -
+        including them would make every open invoice look "changed" every single
+        day and defeat the _SAFE_TO_SKIP cache entirely) and source/source_ref/raw
+        (unread by any decision code - pure provenance metadata)."""
+        contacts_sig = "|".join(
+            f"{c.occurred_on.isoformat()}:{c.direction.value}:{c.channel.value}:{c.classification or ''}"
+            for c in invoice.prior_contacts
+        )
+        return "|".join((
+            invoice.tenant_id,
+            str(invoice.amount_due),
+            invoice.currency,
+            invoice.issue_date.isoformat(),
+            invoice.due_date.isoformat(),
+            invoice.status.value,
+            invoice.debtor_name,
+            invoice.debtor_email or "",
+            invoice.debtor_phone or "",
+            str(invoice.is_b2b),
+            str(invoice.late_fee_allowed),
+            invoice.payment_link or "",
+            contacts_sig,
+        ))
 
     def refresh(self) -> None:
         self._log.clear()  # fresh run → don't double-count the activity feed
@@ -147,8 +206,26 @@ class BoardState:
         # reference and the reference must survive every refresh().
         self._invoices.clear()
         self._invoices.update({inv.invoice_id: inv for inv in invoices})
-        fresh_results = {r.invoice_id: r for r in self._board.run_batch(invoices)}
-        for invoice_id, new_result in fresh_results.items():
+        # Skip the pipeline (and its live Gemini call) only for an invoice that's
+        # both unchanged since last refresh AND already in a _SAFE_TO_SKIP terminal
+        # state - every other state has a legitimate calendar-driven transition
+        # (cooldown elapsing, tone escalating) that a cache would freeze.
+        fresh_results: dict[str, PipelineResult] = {}
+        new_sig: dict[str, str] = {}
+        for inv in invoices:
+            sig = self._invoice_signature(inv)
+            new_sig[inv.invoice_id] = sig
+            old_result = self._results.get(inv.invoice_id)
+            if (
+                old_result is not None
+                and self._invoice_sig.get(inv.invoice_id) == sig
+                and old_result.terminal_state in _SAFE_TO_SKIP
+            ):
+                fresh_results[inv.invoice_id] = old_result
+            else:
+                fresh_results[inv.invoice_id] = self._board.run_one(inv)
+        self._invoice_sig = new_sig  # persists to the NEXT refresh(); drops stale ids
+        for invoice_id in fresh_results:
             old_result = self._results.get(invoice_id)
             if old_result is not None and old_result.is_unresolved_inbound_escalation:
                 fresh_results[invoice_id] = old_result  # don't clobber a pending debtor escalation
@@ -160,6 +237,14 @@ class BoardState:
             )
         if db.supabase_enabled():
             self._reconcile.load_events(db.load_events())
+        self._board_ready = True
+
+    async def refresh_async(self) -> None:
+        """refresh() off the event loop - same pattern as
+        inbound_poll_scheduler.run_forever's asyncio.to_thread(poll_all_connected_tenants,
+        state). Lets a FastAPI lifespan kick off the initial board population as a
+        background task instead of blocking server-ready on it."""
+        await asyncio.to_thread(self.refresh)
 
     def _record_outbound_send(self, invoice: Invoice, result: PipelineResult) -> Invoice:
         """After ANY successful send, append an outbound PriorContact (durably +

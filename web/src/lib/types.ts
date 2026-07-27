@@ -54,6 +54,7 @@ export interface BoardSummary {
 export interface BoardResponse {
   summary: BoardSummary;
   invoices: InvoiceCard[];
+  board_ready: boolean; // false until the backend's first refresh() completes
 }
 
 export interface ApproveResponse {

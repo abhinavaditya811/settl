@@ -61,6 +61,7 @@ class BoardSummary(BaseModel):
 class BoardResponse(BaseModel):
     summary: BoardSummary
     invoices: list[InvoiceCard]
+    board_ready: bool  # False until the first refresh() completes (cold-start window)
 
 
 class ApproveResponse(BaseModel):

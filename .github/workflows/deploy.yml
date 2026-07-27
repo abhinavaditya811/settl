@@ -55,6 +55,7 @@ jobs:
             --source . \
             --project agentapply-491321 \
             --region us-central1 \
+            --min-instances=1 \
             --quiet
 
   deploy-frontend:
