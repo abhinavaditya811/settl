@@ -18,12 +18,20 @@ WORKDIR /app
 # install the local package, so settl is imported from /app/src.
 # cryptography is required at import time (settl.security.token_crypto uses
 # cryptography.fernet at module load, pulled in via oauth_routes -> oauth_google).
+# stripe/google-genai are lazy-imported (engine_factories.make_minter/make_drafter)
+# and BOTH fail silently when missing (StripeLinkMinter.mint's except Exception:
+# return None, and the Gemini path's own fallback) - so a missing package here
+# never crashes the process, it just silently withholds sends / falls back to
+# template drafting with no error surfaced. Verified live: SETTL_USE_STRIPE=1 +
+# STRIPE_SECRET_KEY alone produced "no Stripe mint" in prod until this was added.
 RUN pip install --no-cache-dir \
     "pydantic>=2.6" \
     "fastapi>=0.110" \
     "uvicorn[standard]>=0.29" \
     "psycopg[binary]>=3.1" \
-    "cryptography>=42.0"
+    "cryptography>=42.0" \
+    "stripe>=9.0" \
+    "google-genai>=1.0"
 
 COPY src ./src
 

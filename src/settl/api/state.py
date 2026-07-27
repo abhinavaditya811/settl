@@ -457,6 +457,25 @@ class BoardState:
             if tenant_ids is None or r.tenant_id in tenant_ids
         ]
 
+    def _absorb_new_invoices(self, invoices: list[Invoice]) -> None:
+        """Add freshly-inserted invoices to the board WITHOUT a full refresh().
+        Only these invoices need a decision - the other N invoices' decisions
+        haven't changed just because one new row was added, so re-running the
+        full pipeline (including a live Gemini call per invoice) over the entire
+        dataset for a single addition was the actual cause of "adding an invoice
+        takes so long" (observed live: add_manual_invoice/import_csv both called
+        refresh() for this). enrich_payment_links/run_one are safe to call on a
+        subset - see their own docstrings - unlike reset()/load_events(), which
+        are full-dataset rebuilds this deliberately skips."""
+        invoices = self._reconcile.enrich_payment_links(invoices)
+        for inv in invoices:
+            self._invoices[inv.invoice_id] = inv
+        for inv in invoices:
+            result = self._board.run_one(inv)
+            self._invoice_sig[inv.invoice_id] = self._invoice_signature(inv)
+            self._results[inv.invoice_id] = result
+            self._invoices[inv.invoice_id] = self._record_outbound_send(inv, result)
+
     def import_csv(self, tenant_id: str, csv_text: str) -> CsvImportResult:
         """Parse, persist, and reflect a CSV upload on the board. Raises
         CsvFormatError (400 at the route) if the file itself is unusable; a per-row
@@ -464,15 +483,15 @@ class BoardState:
         result = parse_csv(csv_text, tenant_id)
         if result.invoices:
             db.insert_invoices(result.invoices)
-            self.refresh()
+            self._absorb_new_invoices(result.invoices)
         return result
 
     def add_manual_invoice(self, tenant_id: str, payload: ManualInvoiceInput) -> Invoice:
         """Build, persist, and reflect one manually-entered invoice on the board."""
         invoice = build_manual_invoice(tenant_id, payload)
         db.insert_invoices([invoice])
-        self.refresh()
-        return invoice
+        self._absorb_new_invoices([invoice])
+        return self._invoices[invoice.invoice_id]
 
     def check_payments(self) -> list[str]:
         """Poll Stripe for paid links and auto-reconcile (see ReconciliationDesk).
