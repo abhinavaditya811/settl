@@ -17,8 +17,19 @@ _UPSERT_SQL = """
     returning id
 """
 
+_SELECT_EMAIL_SQL = "select email from tenants where id = %(tenant_id)s"
+
 
 def get_or_create_tenant(google_sub: str, email: str) -> str:
     with connect() as conn:
         row = conn.execute(_UPSERT_SQL, {"google_sub": google_sub, "email": email}).fetchone()
         return row["id"]
+
+
+def get_tenant_email(tenant_id: str) -> str | None:
+    """The operator's own registered email (the account they signed in with) -
+    for notifications that must reach THEM, not the shared SMTP send account
+    (agents/reconcile/notify.py's "recovered"/"needs review" notices)."""
+    with connect() as conn:
+        row = conn.execute(_SELECT_EMAIL_SQL, {"tenant_id": tenant_id}).fetchone()
+    return row["email"] if row else None
