@@ -119,6 +119,29 @@ def test_paid_records_fee_stops_loop_and_notifies(monkeypatch):
     assert sent and "INV-R" in sent[0][1]
 
 
+def test_notify_emails_the_invoices_own_tenant_not_the_shared_inbox(monkeypatch):
+    # Regression target: OperatorNotifier used to always email SETTL_SMTP_USER
+    # (one shared inbox) regardless of which tenant the invoice belonged to.
+    # It should now notify that tenant's OWN registered email instead.
+    monkeypatch.setenv("SETTL_SMTP_USER", "shared-fallback@ourco.test")
+    from settl.data import supabase as db
+
+    monkeypatch.setattr(db, "supabase_enabled", lambda: True)
+    monkeypatch.setattr(
+        db, "get_tenant_email",
+        lambda tenant_id: "vendor-owner@theirbusiness.test" if tenant_id == "t_demo" else None,
+    )
+
+    log = ExecutionLog()
+    sent = []
+    notifier = OperatorNotifier(log=log, email_fn=lambda to, subj, body: sent.append((to, subj, body)))
+    agent = ReconcileAgent(log=log, success_fee_pct=10.0, notifier=notifier)
+
+    agent.reconcile(_inv("2000.00"), [_pay("INV-R", "2000.00")])
+
+    assert sent and sent[0][0] == "vendor-owner@theirbusiness.test"
+
+
 def test_reconcile_notify_false_restores_state_without_emailing():
     # Regression, observed live: the operator got the same "[Settl] Recovered"
     # email once per server restart. load_events() replays already-processed

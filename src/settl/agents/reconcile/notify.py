@@ -3,10 +3,11 @@
 This is an **operator-facing** update (to the vendor using Settl), NOT debtor outreach -
 so it deliberately does NOT go through the compliance gate or the GatedSender (those
 exist for messages to debtors). It always writes an activity-log entry, and optionally
-emails the operator when live email is armed - to the account that sent the outreach
-(SETTL_SMTP_USER), not the debtor-redirect address. With real per-tenant Gmail this
-becomes the tenant's own From address; when Stripe drives detection, the payment notice
-still lands with whoever sent the reminder.
+emails the operator when live email is armed - to THAT INVOICE'S OWN TENANT (their
+registered email, the one they signed in with - data/supabase/tenant_store.py's
+get_tenant_email), not a single shared inbox. Falls back to SETTL_SMTP_USER only when
+the tenant lookup isn't available (Supabase off, or a synthetic/demo tenant with no
+`tenants` row).
 
 **Demo-tenant guard.** This is a real, separate email path from the debtor sender
 (sending/email_sender.py), so it needs its OWN demo guard: an invoice belonging to a
@@ -89,7 +90,7 @@ class OperatorNotifier:
         demo = invoice.tenant_id in self._demo_tenant_ids
         if demo and os.environ.get("SETTL_LIVE_SEND_DEMO") != "1":
             return  # demo notification suppressed - the log entry is the record
-        recipient = _recipient(demo)
+        recipient = _recipient(invoice, demo)
         fn = self._email_fn or _default_email_fn(demo)
         if recipient and fn is not None:
             try:
@@ -98,14 +99,20 @@ class OperatorNotifier:
                 pass  # the notification email is best-effort; the log entry is the record
 
 
-def _recipient(demo: bool = False) -> str | None:
-    # The operator notification goes to the account that SENT the outreach - the
-    # operator's own mailbox (SETTL_SMTP_USER) - NOT the debtor-redirect address.
-    # A demo notification (only reachable with SETTL_LIVE_SEND_DEMO=1) uses the
-    # demo-specific inbox when configured, so it stays out of the real test inbox.
+def _recipient(invoice: Invoice, demo: bool = False) -> str | None:
+    # The operator notification goes to THIS INVOICE'S OWN TENANT - their
+    # registered email, not a single shared inbox. A demo notification (only
+    # reachable with SETTL_LIVE_SEND_DEMO=1) uses the demo-specific inbox when
+    # configured, so it stays out of the real test inbox.
     if demo:
         return os.environ.get("SETTL_DEMO_TEST_RECIPIENT") or os.environ.get("SETTL_SMTP_USER")
-    return os.environ.get("SETTL_SMTP_USER")
+    from settl.data import supabase as db
+
+    if db.supabase_enabled():
+        email = db.get_tenant_email(invoice.tenant_id)
+        if email:
+            return email
+    return os.environ.get("SETTL_SMTP_USER")  # fallback: lookup unavailable/tenant not found
 
 
 def _default_email_fn(demo: bool = False) -> EmailFn | None:

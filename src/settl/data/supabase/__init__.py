@@ -17,7 +17,7 @@ from settl.data.supabase.tenant_config_store import (
     set_payment_plan_autonomy,
     set_payment_plan_templates,
 )
-from settl.data.supabase.tenant_store import get_or_create_tenant
+from settl.data.supabase.tenant_store import get_or_create_tenant, get_tenant_email
 
 __all__ = [
     "supabase_enabled",
@@ -36,6 +36,7 @@ __all__ = [
     "PostgresLogSink",
     "load_execution_log",
     "get_or_create_tenant",
+    "get_tenant_email",
     "insert_invoices",
     "load_policy_overrides",
     "set_payment_plan_templates",
