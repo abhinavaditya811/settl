@@ -9,16 +9,9 @@ import { useCallback, useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import styled from "styled-components";
 import { getBoard } from "@/lib/api";
-import { Loading } from "@/components/ui";
+import BrandLoader from "@/components/ui/BrandLoader";
 import BoardShell from "@/components/dashboard/BoardShell";
 import ZeroState from "@/components/zero/ZeroState";
-
-const Centered = styled.div`
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
 
 const ZeroWrap = styled.div`
   min-height: 100vh;
@@ -76,11 +69,7 @@ export default function DashboardPage() {
   }, [sessionStatus, probeOwnInvoices]);
 
   if (hasOwnInvoices === null) {
-    return (
-      <Centered>
-        <Loading what="your invoices" />
-      </Centered>
-    );
+    return <BrandLoader phase="loading_invoices" />;
   }
 
   if (!hasOwnInvoices) {

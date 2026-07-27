@@ -8,7 +8,8 @@ import styled, { ThemeProvider, useTheme } from "styled-components";
 import { darkTheme, lightTheme, type AppTheme, type ThemeMode } from "@/lib/theme";
 import BoardProvider, { useBoard } from "@/lib/BoardContext";
 import type { BoardMode } from "@/lib/api";
-import { ErrorState, Loading } from "@/components/ui";
+import { ErrorState } from "@/components/ui";
+import BrandLoader from "@/components/ui/BrandLoader";
 import OverviewView from "@/components/overview/OverviewView";
 import InboxView from "@/components/overview/InboxView";
 import ApprovalsView from "@/components/overview/ApprovalsView";
@@ -354,7 +355,7 @@ function BoardShellBody({ mode, footer, workspaceLabel, themeMode, onToggleTheme
           <>
             {tab === "overview" &&
               (loading || !metrics ? (
-                <Loading what="your overview" />
+                <BrandLoader phase="loading_overview" inline />
               ) : (
                 <OverviewView />
               ))}

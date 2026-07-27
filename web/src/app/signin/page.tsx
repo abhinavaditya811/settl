@@ -5,20 +5,29 @@
 // already-authenticated user hits this page, bounce them straight to the
 // dashboard. Middleware sends unauthenticated dashboard visitors here.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styled from "styled-components";
 import { signIn, useSession } from "next-auth/react";
+import BrandLoader from "@/components/ui/BrandLoader";
 
 const DASHBOARD = "/dashboard";
 
 export default function SignInPage() {
   const { status } = useSession();
   const router = useRouter();
+  // Set the instant "Continue with Google" is clicked, so the page shows a
+  // loading treatment for the moment before the browser actually navigates to
+  // Google's consent screen, instead of the button sitting there unresponsive.
+  const [openingGoogle, setOpeningGoogle] = useState(false);
 
   useEffect(() => {
     if (status === "authenticated") router.replace(DASHBOARD);
   }, [status, router]);
+
+  if (status === "loading") return <BrandLoader phase="checking" />;
+  if (status === "authenticated") return <BrandLoader phase="redirecting" />;
+  if (openingGoogle) return <BrandLoader phase="opening_google" />;
 
   return (
     <Wrap>
@@ -29,19 +38,20 @@ export default function SignInPage() {
         </Brand>
         <h1>Sign in</h1>
         <p>
-          Settl chases your overdue invoices and sends recovery emails from your
-          own Gmail account. Connect Google to get started.
+          Sign in to your Settl dashboard. You&apos;ll connect Gmail separately
+          once you&apos;re in.
         </p>
         <GoogleButton
-          onClick={() => signIn("google", { callbackUrl: DASHBOARD })}
-          disabled={status === "loading"}
+          onClick={() => {
+            setOpeningGoogle(true);
+            signIn("google", { callbackUrl: DASHBOARD });
+          }}
         >
           <GoogleMark aria-hidden>G</GoogleMark>
-          {status === "loading" ? "Checking…" : "Continue with Google"}
+          Continue with Google
         </GoogleButton>
         <Fine>
-          We request permission to send email on your behalf. We never read your
-          inbox and never hold your funds. By continuing, you agree to our{" "}
+          We never hold your funds. By continuing, you agree to our{" "}
           <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
         </Fine>
       </Card>
