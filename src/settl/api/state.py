@@ -7,8 +7,9 @@ Sending is safe by default and opt-in for real. Every UNATTENDED path (batch,
 inbound auto-reply) is on its own sender, separate from a deliberate human
 approval, and each needs its own opt-in beyond SETTL_LIVE_SEND:
   * **Default** - everything is mocked; no email leaves ("would send …").
-  * **Approvals** (``SETTL_LIVE_SEND=1`` + ``SETTL_TEST_RECIPIENT``) - a one-tap approval
-    delivers real email. The only sender ``SETTL_LIVE_SEND`` alone controls.
+  * **Approvals** (``SETTL_LIVE_SEND=1``) - a one-tap approval delivers real
+    email to the invoice's own debtor contact. The only sender
+    ``SETTL_LIVE_SEND`` alone controls.
   * **The board batch** (every startup/``/refresh``, over the FULL dataset) needs
     ``SETTL_LIVE_SEND_BATCH=1``, or a plain restart silently re-sends live email to
     every non-first-contact invoice, seed rows included (happened once already).

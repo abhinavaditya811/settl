@@ -15,18 +15,21 @@ from settl.sending.base import SendOutcome
 
 
 def make_sender(log: ExecutionLog, *, extra_gate: str | None = None) -> Sender:
-    """Real Gmail sender (redirected to SETTL_TEST_RECIPIENT) when SETTL_LIVE_SEND
-    is armed AND (no extra_gate, or that env var is separately set to "1");
-    mock otherwise. The approval path is gated by SETTL_LIVE_SEND alone; every
-    UNATTENDED path (batch, inbound auto-reply) passes its own extra_gate so
-    going live there needs a second, deliberate opt-in - see state.py's
-    docstring for why that split exists."""
+    """Real Gmail sender, sending to each invoice's own debtor contact, when
+    SETTL_LIVE_SEND is armed AND (no extra_gate, or that env var is separately
+    set to "1"); mock otherwise. The approval path is gated by SETTL_LIVE_SEND
+    alone - no forced test-recipient redirect here (that was previously a hard
+    requirement for arming live send at all, which also meant every real
+    tenant's approvals got silently redirected to one fixed inbox instead of
+    their actual debtor - see the demo-tenant sender below for where a forced
+    redirect still legitimately belongs, on synthetic data). Every UNATTENDED
+    path (batch, inbound auto-reply) passes its own extra_gate so going live
+    there needs a second, deliberate opt-in - see state.py's docstring for why
+    that split exists."""
     if extra_gate is not None and os.environ.get(extra_gate) != "1":
         return MockSender(log=log)
-    recipient = os.environ.get("SETTL_TEST_RECIPIENT")
-    live = os.environ.get("SETTL_LIVE_SEND") == "1"
-    if live and recipient:
-        sender = GmailSmtpSender(log=log, force_recipient=recipient)
+    if os.environ.get("SETTL_LIVE_SEND") == "1":
+        sender = GmailSmtpSender(log=log)
         if sender.configured:
             return sender
     return MockSender(log=log)
@@ -69,11 +72,12 @@ def guard_demo_tenants(sender: Sender, log: ExecutionLog) -> Sender:
     also go out live) - off by default, matching every other live-send flag.
 
     Opting in uses its OWN from/to pair - SETTL_DEMO_SMTP_USER/_APP_PASSWORD/
-    _TEST_RECIPIENT - if configured, separate from SETTL_SMTP_USER/
-    SETTL_TEST_RECIPIENT (the ones used for real invoice testing). Without
-    this, flipping SETTL_LIVE_SEND_DEMO on would flood the SAME inbox you're
-    using to test your own invoices with ~25 synthetic seed sends. Falls back
-    to the shared sender if the demo-specific pair isn't set."""
+    _TEST_RECIPIENT - if configured, separate from SETTL_SMTP_USER (the one
+    used for real invoice testing, which now sends to each real invoice's own
+    debtor contact - see make_sender). Without this, flipping
+    SETTL_LIVE_SEND_DEMO on would flood the SAME inbox you're using to test
+    your own invoices with ~25 synthetic seed sends. Falls back to the shared
+    sender if the demo-specific pair isn't set."""
     if os.environ.get("SETTL_LIVE_SEND_DEMO") == "1":
         return _demo_sender(log) or sender
     from settl.api.identity import demo_tenant_ids
