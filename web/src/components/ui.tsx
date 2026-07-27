@@ -24,17 +24,19 @@ const HeaderRow = styled.header`
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
   h1 {
     margin: 0;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display, inherit);
+    font-size: clamp(24px, 2.4vw, 30px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
   }
   p {
-    margin: 4px 0 0;
+    margin: 6px 0 0;
     font-size: 13.5px;
     color: ${({ theme }) => theme.textMuted};
+    max-width: 52ch;
   }
 `;
 
