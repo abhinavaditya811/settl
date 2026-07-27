@@ -33,17 +33,19 @@ State is in-memory and per-process; a durable store is a later concern.
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+import os
+from datetime import date, datetime
 from pathlib import Path
 
 from settl.adapters.csv_adapter import CsvImportResult, parse_csv
 from settl.adapters.manual_entry import ManualInvoiceInput, build_manual_invoice
 from settl.agents.reconcile import OperatorNotifier, ReconcileAgent
 from settl.audit import AgentEngineSink, ExecutionLog, agent_engine_enabled, deduped_entries
-from settl.compliance.rules import WAIVABLE_CODES
+from settl.compliance.rules import WAIVABLE_CODES, VoiceContext
 from settl.config import load_dotenv
 from settl.data import load_synthetic_invoices
 from settl.data import supabase as db
+from settl.data.tenants import config_for
 from settl.agents.payment_plan.models import PaymentPlan
 from settl.api import engine_factories as factories
 from settl.api.identity import demo_tenant_ids
@@ -56,6 +58,7 @@ from settl.orchestrator import Orchestrator, TerminalState
 from settl.orchestrator.result import PipelineResult
 from settl.schema.invoice import Channel, ContactDirection, Invoice, PriorContact
 from settl.tenancy.config import PaymentPlanTemplate
+from settl.voice.script import build_call_script
 
 # QUARANTINED (bad/unreadable rows - validate_invoice never reads anything
 # date-derived) and RECOVERED (already paid; reconcile handles payment truth
@@ -326,6 +329,42 @@ class BoardState:
         new_result = self._approver.approve_and_send(invoice, outgoing, channel)
         self._invoices[invoice_id] = self._record_outbound_send(invoice, new_result)
         self._results[invoice_id] = new_result  # reflect the outcome on the board
+        return new_result
+
+    def place_call(self, invoice_id: str, message: str | None = None) -> PipelineResult | None:
+        """The Approvals tab's "Call" button: a human explicitly choosing voice for
+        the held draft, whatever channel strategy picked. The draft is framed as a
+        call script (AI disclosure first, link moved to a companion SMS) and goes
+        through approve_and_send - the gate still runs every rule, voice rules
+        included; this method decides nothing about safety itself."""
+        found = self.get(invoice_id)
+        if not found:
+            return None
+        invoice, result = found
+        if result.terminal_state is not TerminalState.AWAITING_APPROVAL or not result.message:
+            return None
+        reminder = message.strip() if message and message.strip() else result.message
+        config = config_for(invoice.tenant_id)
+        # Whose name the disclosure speaks. Real (non-synthetic) tenants have no
+        # identity.business_name yet - SETTL_BUSINESS_NAME bridges that until
+        # identity config storage lands; the neutral fallback keeps a raw tenant
+        # UUID from ever being read aloud on a call.
+        business = (
+            config.identity.business_name
+            or os.environ.get("SETTL_BUSINESS_NAME", "").strip()
+            or "your vendor"
+        )
+        script = build_call_script(business_name=business, reminder=reminder)
+        # Demo-minimal consent shape, same as voice/demo.py's offline demo: the gate
+        # still runs and still decides, it's just told the call is consented and
+        # given the server-local dial time. Real per-debtor consent capture (the
+        # ConsentStore) is a separate, later project - see VOICE_AGENT_SPEC §10.
+        vctx = VoiceContext(call_consent=True, now_local=datetime.now().time())
+        new_result = self._approver.approve_and_send(
+            invoice, script.full, Channel.VOICE, voice=vctx
+        )
+        self._invoices[invoice_id] = self._record_outbound_send(invoice, new_result)
+        self._results[invoice_id] = new_result
         return new_result
 
     def payment_plan(self, invoice_id: str) -> PaymentPlan | None:

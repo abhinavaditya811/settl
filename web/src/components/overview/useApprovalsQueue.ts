@@ -25,7 +25,7 @@ function typingInField(): boolean {
 }
 
 export function useApprovalsQueue() {
-  const { board, metrics, approve, flag, notify, approvingId, flaggingId } = useBoard();
+  const { board, metrics, approve, call, flag, notify, approvingId, flaggingId } = useBoard();
   const [details, setDetails] = useState<Record<string, InvoiceDetail>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>("all");
@@ -101,6 +101,14 @@ export function useApprovalsQueue() {
       if (res?.sent) announceProgress("Sent", id);
     },
     [approve, announceProgress],
+  );
+
+  const handleCall = useCallback(
+    async (id: string, message?: string) => {
+      const res = await call(id, message);
+      if (res?.sent) announceProgress("Called", id);
+    },
+    [call, announceProgress],
   );
 
   const handleSkip = useCallback(
@@ -206,6 +214,7 @@ export function useApprovalsQueue() {
     approvingId,
     flaggingId,
     handleApprove,
+    handleCall,
     handleSkip,
     handleHold,
     approveAll,

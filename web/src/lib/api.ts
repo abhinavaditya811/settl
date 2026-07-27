@@ -70,6 +70,16 @@ export const approveInvoice = (id: string, message?: string) =>
     body: message ? JSON.stringify({ message }) : undefined,
   });
 
+// Place a (mock) voice call for a held draft instead of the written channel. The
+// engine frames the draft as a call script (AI disclosure first, link via SMS)
+// and re-runs the compliance gate - voice rules included - before "dialing".
+export const callInvoice = (id: string, message?: string) =>
+  getJSON<ApproveResponse>(`/api/invoices/${id}/call`, {
+    method: "POST",
+    headers: message ? { "content-type": "application/json" } : undefined,
+    body: message ? JSON.stringify({ message }) : undefined,
+  });
+
 // Poll the engine for Stripe payments; it auto-reconciles any that were paid.
 export const checkPayments = () =>
   getJSON<CheckPaymentsResponse>("/api/check-payments", { method: "POST" });
