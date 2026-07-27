@@ -7,9 +7,13 @@ committed:
 
     SETTL_SMTP_USER          your Gmail address (the authenticated sender)
     SETTL_SMTP_APP_PASSWORD  a Gmail *app password* (not your login password)
-    SETTL_TEST_RECIPIENT     (optional) force every email to this address - a
-                             safety belt for self-tests so a synthetic debtor
-                             address can never be emailed by accident.
+
+``force_recipient`` (constructor param only, never auto-read from the
+environment here) redirects every email to one address regardless of the
+invoice's own debtor_email/phone - callers opt into this explicitly (e.g. the
+demo-tenant sender's SETTL_DEMO_TEST_RECIPIENT) rather than it silently
+kicking in from a shared env var. A real ("mine") tenant's approvals always
+go to that invoice's own contact.
 
 Build order note: this is the contingent real-sending track (CLAUDE.md). It exists
 for a controlled self-test to your own inbox; it is not wired into the default
@@ -51,20 +55,26 @@ class GmailSmtpSender(GatedSender):
         super().__init__(log=log)
         self._user = user or os.environ.get("SETTL_SMTP_USER")
         self._password = app_password or os.environ.get("SETTL_SMTP_APP_PASSWORD")
-        # force_recipient lets a self-test redirect every email to a known inbox.
-        self._force_recipient = force_recipient or os.environ.get("SETTL_TEST_RECIPIENT")
+        # Explicit param only - see the class docstring for why this doesn't
+        # also fall back to reading an env var itself.
+        self._force_recipient = force_recipient
         self._subject_prefix = subject_prefix
 
     @property
     def configured(self) -> bool:
         return bool(self._user and self._password)
 
-    def _deliver(self, invoice: Invoice, message: str, channel: Channel | None) -> str:
+    def _deliver(self, invoice: Invoice, message: str, _channel: Channel | None) -> str:
         if not self.configured:
             raise MissingCredentials(
                 "Set SETTL_SMTP_USER and SETTL_SMTP_APP_PASSWORD to send email."
             )
-        recipient = self._force_recipient or invoice.contact_for(channel) or invoice.debtor_email
+        # NOT invoice.contact_for(channel) - this sender only ever delivers by
+        # email, regardless of what channel the strategy agent decided (e.g.
+        # "sms" for a firmer tone). contact_for(SMS/VOICE) resolves to
+        # debtor_phone, which would otherwise land a phone number in an email's
+        # To: header (observed live).
+        recipient = self._force_recipient or invoice.debtor_email
 
         email = EmailMessage()
         email["From"] = self._user
@@ -81,8 +91,7 @@ class GmailSmtpSender(GatedSender):
             # the batch/startup; GatedSender.send() reports it as withheld instead.
             raise DeliveryFailed(str(exc)) from exc
 
-        original = invoice.contact_for(channel) or invoice.debtor_email
-        redirected = " (redirected from %s)" % original if (
-            self._force_recipient and self._force_recipient != original
+        redirected = " (redirected from %s)" % invoice.debtor_email if (
+            self._force_recipient and self._force_recipient != invoice.debtor_email
         ) else ""
         return f"emailed {invoice.invoice_id} to {recipient}{redirected} via Gmail SMTP"
