@@ -29,7 +29,7 @@ const FALLBACK: InvoiceCard[] = [
     is_b2b: true,
     channel: "email",
     payment_link: null,
-    terminal_state: "awaiting_response",
+    terminal_state: "sent",
     detail: "Payment plan active",
     needs_human: false,
     can_approve: false,
