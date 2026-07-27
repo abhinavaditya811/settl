@@ -5,7 +5,7 @@ import styled from "styled-components";
 import { useLandingAudio } from "./useLandingAudio";
 
 const SECTIONS = new Set(["voice", "console", "safety", "pricing", "recovery-story"]);
-const TABS = new Set(["overview", "approvals", "invoices", "activity"]);
+const TABS = new Set(["overview", "inbox", "approvals", "invoices", "plans", "activity"]);
 const STAGE_RE = /^stage-([1-6])$/;
 
 const Mute = styled.button`

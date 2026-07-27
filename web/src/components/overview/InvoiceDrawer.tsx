@@ -1,16 +1,20 @@
 "use client";
 
-// Case-file drawer: identity, chase strip, steering, message, plan, trace.
+// Case-file drawer: identity, chase strip, steering, flag, message, plan, trace.
 
+import { useState } from "react";
 import styled, { useTheme } from "styled-components";
 import type { AppTheme } from "@/lib/theme";
 import type { InvoiceCard, InvoiceDetail, TraceEntry } from "@/lib/types";
 import { STATE_META } from "@/lib/types";
-import { formatMoney, overdueLabel } from "@/lib/format";
+import { formatMoney, overdueLabel, timeAgo } from "@/lib/format";
+import { useBoard } from "@/lib/BoardContext";
 import DecisionTrace from "@/components/DecisionTrace";
 import PaymentPlanPanel from "@/components/PaymentPlanPanel";
+import FlagForm from "@/components/FlagForm";
 import { sendChannelLabel, sendTone } from "./approvalSendMeta";
 import { heatColor, initials, whatsNext } from "./invoiceNext";
+import { downloadEvidencePack } from "./evidenceDownload";
 
 const Overlay = styled.div`
   position: fixed;
@@ -228,6 +232,8 @@ export default function InvoiceDrawer({
   onSoften: () => void;
 }) {
   const theme = useTheme() as AppTheme;
+  const { activity } = useBoard();
+  const [flaggingOpen, setFlaggingOpen] = useState(false);
   const st = theme.status[invoice.terminal_state];
   const chase = chaseLabel(invoice, detail);
   const canSteer =
@@ -310,9 +316,36 @@ export default function InvoiceDrawer({
                 <SBtn disabled={flagging} onClick={onSoften}>
                   Soften tone
                 </SBtn>
+                <SBtn
+                  type="button"
+                  disabled={flagging}
+                  onClick={() => setFlaggingOpen((v) => !v)}
+                >
+                  {flaggingOpen ? "Hide rules" : "Set a rule"}
+                </SBtn>
               </Steer>
             )}
           </WhatsNext>
+
+          {flaggingOpen && (
+            <>
+              <Cap>Guardrail</Cap>
+              <FlagForm
+                invoiceId={invoice.invoice_id}
+                onDone={() => setFlaggingOpen(false)}
+                onCancel={() => setFlaggingOpen(false)}
+              />
+            </>
+          )}
+
+          {detail?.last_inbound_poll_at && (
+            <>
+              <Cap>Mailbox</Cap>
+              <Chase>
+                Last inbound poll {timeAgo(detail.last_inbound_poll_at)}
+              </Chase>
+            </>
+          )}
 
           {(detail?.message_preview || detail?.message) && (
             <>
@@ -335,6 +368,21 @@ export default function InvoiceDrawer({
           ) : (
             <DecisionTrace trace={trace} />
           )}
+
+          <Steer style={{ marginTop: 16 }}>
+            <SBtn
+              type="button"
+              onClick={() =>
+                downloadEvidencePack({
+                  invoiceId: invoice.invoice_id,
+                  activity,
+                  trace,
+                })
+              }
+            >
+              Download evidence
+            </SBtn>
+          </Steer>
         </DBody>
 
         {canApprove && (

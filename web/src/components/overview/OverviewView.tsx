@@ -1,15 +1,19 @@
 "use client";
 
-// Layout fills the page: left column stacks aging + activity under Needs OK,
-// so Pipeline's height never leaves a dead black band beside a short card.
+// Layout fills the page: brief + connections, cash, then columns.
 
+import { useMemo } from "react";
 import styled from "styled-components";
 import { useBoard } from "@/lib/BoardContext";
+import { needsYou } from "./invoiceNext";
 import CashCommand from "./CashCommand";
 import BookHealth from "./BookHealth";
 import PipelineMap from "./PipelineMap";
 import ChaseQueue from "./ChaseQueue";
 import AgentPulse from "./AgentPulse";
+import MorningBrief from "./MorningBrief";
+import ConnectionsStrip from "./ConnectionsStrip";
+import CashForecast from "./CashForecast";
 
 const Page = styled.div`
   display: flex;
@@ -51,20 +55,39 @@ const Stack = styled.div`
 `;
 
 export default function OverviewView() {
-  const { board, metrics } = useBoard();
+  const { board, metrics, health } = useBoard();
+  const brief = useMemo(() => {
+    const inv = board?.invoices ?? [];
+    const needs = inv.filter((i) => needsYou(i) || i.can_approve);
+    const held = inv
+      .filter((i) => i.can_approve)
+      .reduce((s, i) => s + (Number(i.amount_due) || 0), 0);
+    return {
+      needsYou: needs.length,
+      heldAmount: held,
+      disputes: inv.filter((i) => i.terminal_state === "escalated").length,
+      quarantine: inv.filter((i) => i.terminal_state === "quarantined").length,
+      plansWaiting: inv.filter((i) => /payment.?plan/i.test(i.detail ?? "")).length,
+      currency: metrics?.currency ?? inv[0]?.currency ?? "USD",
+    };
+  }, [board, metrics]);
+
   if (!metrics || !board) return null;
 
   return (
     <Page>
       <Head>
         <h1>Overview</h1>
-        <p>What you&rsquo;re owed, what needs your OK, and what Settl already did.</p>
+        <p>Command room: what needs you, what Settl is doing, how the engine is armed.</p>
       </Head>
+      <ConnectionsStrip health={health} />
+      <MorningBrief {...brief} />
       <CashCommand metrics={metrics} />
       <ChaseQueue />
       <Columns>
         <Stack>
           <BookHealth metrics={metrics} />
+          <CashForecast metrics={metrics} />
           <AgentPulse />
         </Stack>
         <PipelineMap summary={board.summary} />
