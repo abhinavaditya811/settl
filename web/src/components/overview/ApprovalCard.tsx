@@ -2,7 +2,7 @@
 
 // One held first-contact draft: evidence pack, preview, edit, approve / skip / hold.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import styled, { useTheme } from "styled-components";
 import type { AppTheme } from "@/lib/theme";
 import type { InvoiceCard, InvoiceDetail } from "@/lib/types";
@@ -219,7 +219,7 @@ export default function ApprovalCard({
   const preview = detail?.message_preview ?? draft;
   const [text, setText] = useState(draft);
   const [editing, setEditing] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null) as RefObject<HTMLTextAreaElement>;
   const dirty = text.trim() !== draft.trim();
   const channel = invoice.channel ?? "email";
   const evidence = approvalEvidence(detail);

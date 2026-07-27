@@ -172,11 +172,11 @@ export function ApprovalEditor({
   value: string;
   onChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement>;
 }) {
   return (
     <Editor
-      ref={inputRef}
+      ref={inputRef as React.LegacyRef<HTMLTextAreaElement>}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
