@@ -361,6 +361,64 @@ export default function ProductConsolePreview({ tab }: { tab: ConsoleTabKey }) {
       </Surface>
     );
 
+  if (tab === "inbox")
+    return (
+      <Surface>
+        <Row>
+          <span className="av">AM</span>
+          <div><div>First send · needs your OK</div><div className="meta">Atlas Mechanical · $6,800</div></div>
+          <span className="tag warn">APPROVE</span>
+        </Row>
+        <Row>
+          <span className="av">CC</span>
+          <div><div>Dispute · debtor replied</div><div className="meta">Cedar & Co · $3,400</div></div>
+          <span className="tag held">DISPUTE</span>
+        </Row>
+        <Row>
+          <span className="av">PR</span>
+          <div><div>Payment plan requested</div><div className="meta">Pacific Retail · $4,200</div></div>
+          <span className="tag warn">PLAN</span>
+        </Row>
+      </Surface>
+    );
+
+  if (tab === "plans")
+    return (
+      <Surface>
+        <Row>
+          <span className="av">PR</span>
+          <div><div>Proposed · 3 installments</div><div className="meta">Pacific Retail · waiting on your decide</div></div>
+          <span className="tag warn">PROPOSED</span>
+        </Row>
+        <Row>
+          <span className="av">SR</span>
+          <div><div>Active · next due in 12d</div><div className="meta">Summit Roofing · $2,750 schedule</div></div>
+          <span className="tag paid">ACTIVE</span>
+        </Row>
+      </Surface>
+    );
+
+  if (tab === "settings")
+    return (
+      <Surface>
+        <Row>
+          <span className="av">AU</span>
+          <div><div>Autonomy · balanced</div><div className="meta">First send still needs your OK</div></div>
+          <span className="tag paid">ARMED</span>
+        </Row>
+        <Row>
+          <span className="av">GR</span>
+          <div><div>Guardrails · 2 rules</div><div className="meta">Never chase after dispute · soft tone only</div></div>
+          <span className="tag held">RULES</span>
+        </Row>
+        <Row>
+          <span className="av">CN</span>
+          <div><div>Connections</div><div className="meta">Gmail connected · Stripe ready</div></div>
+          <span className="tag paid">LIVE</span>
+        </Row>
+      </Surface>
+    );
+
   return (
     <Surface>
       <Activity>

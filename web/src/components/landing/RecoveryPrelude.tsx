@@ -80,10 +80,10 @@ const Nav = styled.nav<{ $compact:boolean }>`
   @media(max-width:720px){ width:calc(100% - 28px); .links{display:none;} }
 `;
 const HeroInner = styled.div`
-  width:min(1240px,calc(100% - 48px)); min-height:calc(100svh - 80px); margin:0 auto; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:60px; position:relative; z-index:2; padding:48px 0 80px;
-  @media(max-width:900px){ width:calc(100% - 36px); grid-template-columns:1fr; gap:48px; padding-top:64px; }
+  width:min(1240px,calc(100% - 48px)); min-height:calc(100svh - 80px); margin:0 auto; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:60px; position:relative; z-index:2; padding:112px 0 80px;
+  @media(max-width:900px){ width:calc(100% - 36px); grid-template-columns:1fr; gap:48px; padding-top:96px; }
 `;
-const Eyebrow = styled(motion.div)`font:500 10px var(--font-mono); letter-spacing:.13em; text-transform:uppercase; color:${mint}; margin-bottom:22px;`;
+const Eyebrow = styled(motion.div)`font:500 10px var(--font-mono); letter-spacing:.13em; text-transform:uppercase; color:${mint}; margin:0 0 22px;`;
 const H1 = styled.h1`
   margin:0; max-width:9ch; font:600 clamp(64px,8.4vw,122px)/.83 var(--font-display); letter-spacing:-.075em;
   .line { display:block; overflow:hidden; padding-bottom:.16em; margin-bottom:-.08em; }

@@ -20,6 +20,7 @@ import type {
   GuardrailView,
   Metrics,
 } from "./types";
+import { EMPTY_HEALTH, type EngineHealth } from "./health";
 import {
   approveInvoice,
   type BoardMode,
@@ -43,6 +44,7 @@ interface BoardCtx {
   metrics: Metrics | null;
   activity: ActivityEntry[];
   guardrails: GuardrailView[];
+  health: EngineHealth;
   liveSend: boolean;
   loading: boolean;
   error: string | null;
@@ -80,6 +82,7 @@ export default function BoardProvider({
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [guardrails, setGuardrails] = useState<GuardrailView[]>([]);
+  const [health, setHealth] = useState<EngineHealth>(EMPTY_HEALTH);
   const [liveSend, setLiveSend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,10 +126,20 @@ export default function BoardProvider({
     fetch("/api/health")
       .then((r) => r.json())
       .then((h) => {
-        setLiveSend(Boolean(h.live_send));
-        setStripeEnabled(h.payments === "stripe");
+        const next: EngineHealth = {
+          status: String(h.status ?? "ok"),
+          live_send: Boolean(h.live_send),
+          inbound_reply_live: Boolean(h.inbound_reply_live),
+          drafting: String(h.drafting ?? "unknown"),
+          payments: String(h.payments ?? "none"),
+          inbound_poll: h.inbound_poll ?? null,
+        };
+        setHealth(next);
+        setLiveSend(next.live_send);
+        setStripeEnabled(next.payments === "stripe");
       })
       .catch(() => {
+        setHealth(EMPTY_HEALTH);
         setLiveSend(false);
         setStripeEnabled(false);
       });
@@ -149,8 +162,11 @@ export default function BoardProvider({
         await loadAll();
         setToast(
           res.sent
-            ? { tone: "ok", text: `${id} approved and sent.` }
-            : { tone: "err", text: `${id} not sent - ${res.detail}` },
+            ? {
+                tone: "ok",
+                text: `Sent ${id}. Receipt logged in Activity · undo via Pause if needed.`,
+              }
+            : { tone: "err", text: `${id} not sent · ${res.detail}` },
         );
         return res;
       } catch (e) {
@@ -232,6 +248,7 @@ export default function BoardProvider({
     metrics,
     activity,
     guardrails,
+    health,
     liveSend,
     loading,
     error,

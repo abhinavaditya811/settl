@@ -35,6 +35,7 @@ export interface InvoiceDetail extends InvoiceCard {
   message: string | null;
   message_preview: string | null; // message with {{payment_link}} resolved (read-only)
   steps: StepView[];
+  last_inbound_poll_at?: string | null;
 }
 
 export interface TraceEntry {

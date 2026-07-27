@@ -5,18 +5,22 @@
 import styled from "styled-components";
 import ActivityPulse from "./ActivityPulse";
 import ActivityRow from "./ActivityRow";
+import { downloadEvidencePack } from "./evidenceDownload";
 import {
   Empty,
   Filter,
   Filters,
   Head,
+  HeadBtns,
   Page,
   Search,
   Stack,
   Toolbar,
+  AddBtn,
 } from "./invoicesChrome";
 import { Rise } from "./overviewChrome";
 import { entryKey, useActivityFeed } from "./useActivityFeed";
+import { useBoard } from "@/lib/BoardContext";
 
 const Day = styled.div`
   font-size: 11.5px;
@@ -29,6 +33,7 @@ const Day = styled.div`
 
 export default function ActivityView() {
   const f = useActivityFeed();
+  const { activity } = useBoard();
 
   if (f.activity.length === 0) {
     return (
@@ -61,6 +66,14 @@ export default function ActivityView() {
               Scan the trail, open Why for the full reason, jump to any invoice.
             </p>
           </div>
+          <HeadBtns>
+            <AddBtn
+              type="button"
+              onClick={() => downloadEvidencePack({ activity })}
+            >
+              Download evidence
+            </AddBtn>
+          </HeadBtns>
         </Head>
 
         <ActivityPulse

@@ -1,52 +1,65 @@
 "use client";
 
-// Profile tab (signed-in operator only - BoardShell excludes it from the public
-// demo). Shows the account identity from the NextAuth session and the Gmail
-// "Connect" control (moved here from the sidebar footer so it has room for a
-// real label instead of a cramped icon-only button).
+// Settings (was Profile): identity, connections, autonomy, guardrails, plans, voice notes.
 
 import { useSession } from "next-auth/react";
 import styled from "styled-components";
 import GmailConnect from "@/components/GmailConnect";
 import PaymentPlanTemplates from "@/components/profile/PaymentPlanTemplates";
+import GuardrailsPanel from "@/components/GuardrailsPanel";
+import { useBoard } from "@/lib/BoardContext";
+import AutonomyDial from "@/components/overview/AutonomyDial";
+import ConnectionsStrip from "@/components/overview/ConnectionsStrip";
+import { downloadEvidencePack } from "@/components/overview/evidenceDownload";
+import { Rise } from "@/components/overview/overviewChrome";
+import WorkspaceExtras from "@/components/profile/WorkspaceExtras";
 
-const Title = styled.h1`
-  font-size: 22px;
-  font-weight: 700;
-  margin: 0 0 4px;
+const Page = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 640px;
+  padding-bottom: 48px;
 `;
-const Sub = styled.p`
-  font-size: 13.5px;
-  color: ${({ theme }) => theme.textMuted};
-  margin: 0 0 22px;
+
+const Head = styled.header`
+  h1 {
+    margin: 0;
+    font-family: var(--font-display, inherit);
+    font-size: clamp(26px, 2.6vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.045em;
+  }
+  p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    line-height: 1.4;
+    color: ${({ theme }) => theme.textMuted};
+  }
 `;
-const Card = styled.div`
-  max-width: 480px;
-  padding: 22px 24px;
+
+const Card = styled.section`
+  padding: 18px 20px;
   border-radius: 14px;
   border: 1px solid ${({ theme }) => theme.border};
   background: ${({ theme }) => theme.surface};
 `;
-const Head = styled.div`
-  padding-bottom: 20px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid ${({ theme }) => theme.border};
-  .name {
-    font-size: 16px;
-    font-weight: 700;
-  }
-  .email {
-    font-size: 13px;
-    color: ${({ theme }) => theme.textMuted};
-    margin-top: 2px;
-  }
+
+const Cap = styled.h2`
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.textMuted};
 `;
+
 const Row = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 0;
+  padding: 12px 0;
   &:not(:last-child) {
     border-bottom: 1px solid ${({ theme }) => theme.border};
   }
@@ -61,33 +74,118 @@ const Row = styled.div`
   }
 `;
 
-export default function ProfileView() {
+const Btn = styled.button`
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.text};
+  cursor: pointer;
+`;
+
+const Note = styled.p`
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: ${({ theme }) => theme.textMuted};
+`;
+
+export default function ProfileView({ demo }: { demo?: boolean }) {
   const { data: session } = useSession();
   const user = session?.user;
+  const { health, activity, guardrails } = useBoard();
+  const name = demo ? "Maya Chen" : user?.name ?? "—";
+  const email = demo ? "maya@northline.studio" : user?.email ?? "—";
 
   return (
-    <>
-      <Title>Profile</Title>
-      <Sub>Your account and connected integrations.</Sub>
-      <Card>
+    <Rise>
+      <Page>
         <Head>
-          <div className="name">{user?.name ?? "—"}</div>
-          <div className="email">{user?.email ?? "—"}</div>
+          <div>
+            <h1>Settings</h1>
+            <p>
+              How Settl is armed, how autonomous it may act, and the rules you taught
+              it.
+            </p>
+          </div>
         </Head>
-        <Row>
-          <span className="label">Name</span>
-          <span className="value">{user?.name ?? "—"}</span>
-        </Row>
-        <Row>
-          <span className="label">Email</span>
-          <span className="value">{user?.email ?? "—"}</span>
-        </Row>
-        <Row>
-          <span className="label">Gmail (inbound replies)</span>
-          <GmailConnect />
-        </Row>
-      </Card>
-      <PaymentPlanTemplates />
-    </>
+
+        <Card>
+          <Cap>Account</Cap>
+          <Row>
+            <span className="label">Name</span>
+            <span className="value">{name}</span>
+          </Row>
+          <Row>
+            <span className="label">Email</span>
+            <span className="value">{email}</span>
+          </Row>
+          {!demo && (
+            <Row>
+              <span className="label">Gmail (inbound replies)</span>
+              <GmailConnect />
+            </Row>
+          )}
+          {demo && (
+            <Row>
+              <span className="label">Gmail (inbound replies)</span>
+              <span className="value">Connected · demo</span>
+            </Row>
+          )}
+        </Card>
+
+        <Card>
+          <Cap>Connections</Cap>
+          <ConnectionsStrip health={health} />
+        </Card>
+
+        <Card>
+          <Cap>Autonomy dial</Cap>
+          <AutonomyDial />
+        </Card>
+
+        <Card>
+          <Cap>Your rules ({guardrails.length})</Cap>
+          {guardrails.length === 0 ? (
+            <Note>
+              No guardrails yet. Open an invoice and use &ldquo;Set a rule&rdquo; to teach
+              the engine how to handle cases like it.
+            </Note>
+          ) : (
+            <GuardrailsPanel />
+          )}
+        </Card>
+
+        <Card>
+          <Cap>Voice ops</Cap>
+          <Note>
+            Voice scripts preview in Approvals when the channel is voice. Call
+            windows, clone consent, and DNC live in the engine voice stack; wire
+            full opt-in controls here once tenant audio config is exposed on the
+            settings API.
+          </Note>
+        </Card>
+
+        <Card>
+          <Cap>Evidence</Cap>
+          <Note style={{ marginBottom: 12 }}>
+            Download a JSON pack of the current activity window for pilots and
+            audits.
+          </Note>
+          <Btn
+            type="button"
+            onClick={() => downloadEvidencePack({ activity })}
+          >
+            Download board evidence
+          </Btn>
+        </Card>
+
+        <WorkspaceExtras ownerName={name} ownerEmail={email} />
+
+        <PaymentPlanTemplates />
+      </Page>
+    </Rise>
   );
 }
