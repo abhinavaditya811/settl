@@ -4,6 +4,6 @@ Auto-updated by `.github/workflows/deploy.yml`. The backend/frontend lines
 update only on a successful deploy of that side; "Workflow last ran" updates
 on every push to master, even ones that deploy nothing. Do not edit by hand.
 
-- **Backend (Cloud Run)**: 2026-07-27T17:46:10Z — commit `a537f5e`
+- **Backend (Cloud Run)**: 2026-07-27T19:09:24Z — commit `9488bf2`
 - **Frontend (Vercel)**: 2026-07-27T18:37:15Z — commit `9f4f015`
-- **Workflow last ran**: 2026-07-27T18:37:15Z — commit `9f4f015`
+- **Workflow last ran**: 2026-07-27T19:09:24Z — commit `9488bf2`
