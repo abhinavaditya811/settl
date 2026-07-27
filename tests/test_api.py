@@ -6,9 +6,15 @@ non-approvable invoice is refused with 409)."""
 
 from fastapi.testclient import TestClient
 
-from settl.api.main import app
+from settl.api.main import app, state
 
 client = TestClient(app)
+# main.py's module-level `state` is built with auto_refresh=False and populated by
+# a background task kicked off from the app's lifespan (fast Cloud Run readiness -
+# see main.py). TestClient(app) here is never entered as a context manager, so
+# that lifespan never runs; refresh synchronously so the board is populated before
+# any test runs, same as before the deferred-refresh change.
+state.refresh()
 
 
 def test_health():
@@ -119,6 +125,43 @@ def test_refresh_still_recomputes_an_ordinary_gate_escalation():
     board.refresh()
 
     assert board._results[target] is not stale  # recomputed fresh, as before this fix
+
+
+def test_refresh_reuses_a_quarantined_result_when_unchanged():
+    # QUARANTINED (bad/unreadable row) is one of the two terminal states safe to
+    # skip reprocessing for (see _SAFE_TO_SKIP in state.py) - an unchanged
+    # QUARANTINED invoice should reuse the exact same PipelineResult object
+    # across refreshes rather than paying for a wasted re-run.
+    from settl.api.state import BoardState
+    from settl.orchestrator.result import PipelineResult, TerminalState
+
+    board = BoardState()
+    target = next(iter(board._invoices))
+    stubbed = PipelineResult(invoice_id=target, terminal_state=TerminalState.QUARANTINED, detail="bad row")
+    board._results[target] = stubbed
+    # board._invoice_sig[target] already reflects this invoice's current (unchanged)
+    # data from the refresh() that ran during the BoardState() construction above.
+
+    board.refresh()
+
+    assert board._results[target] is stubbed  # reused, not recomputed
+
+
+def test_refresh_does_not_reuse_a_quarantined_result_when_changed():
+    # The reuse above must be gated on the signature actually matching - proves
+    # the dirty-check, not just the terminal-state check, controls the skip.
+    from settl.api.state import BoardState
+    from settl.orchestrator.result import PipelineResult, TerminalState
+
+    board = BoardState()
+    target = next(iter(board._invoices))
+    stubbed = PipelineResult(invoice_id=target, terminal_state=TerminalState.QUARANTINED, detail="bad row")
+    board._results[target] = stubbed
+    board._invoice_sig[target] = "stale-signature-that-will-not-match"  # simulate a change since last seen
+
+    board.refresh()
+
+    assert board._results[target] is not stubbed  # signature mismatch → reprocessed fresh
 
 
 def _sent_target(board):

@@ -32,10 +32,13 @@ CORS is open to the Next.js dev origin(s); override with SETTL_CORS_ORIGINS.
 
 from __future__ import annotations
 
+import asyncio
 import os
+from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,13 +85,30 @@ from settl.voice.webhook import ingest_retell_webhook
 _RUNS = Path(os.environ.get("SETTL_RUNS_DIR", Path(__file__).resolve().parents[3] / "runs"))
 _RUNS.mkdir(parents=True, exist_ok=True)
 
-state = BoardState(log_path=_RUNS / "dashboard.jsonl")
+# auto_refresh=False: refresh() is a full Supabase load + sequential per-invoice
+# pipeline (live Gemini calls included) - the single biggest Cloud Run cold-start
+# cost if run here at import time. `lifespan` below kicks it off as a background
+# task instead, so Uvicorn can start accepting requests (incl. the /health check)
+# immediately.
+state = BoardState(log_path=_RUNS / "dashboard.jsonl", auto_refresh=False)
 # Voice-safety state the Retell webhook writes to. Per-process like BoardState;
 # moves to the durable store with everything else (VOICE_AGENT_SPEC §10).
 voice_do_not_call = DoNotCallRegistry()
 
-# lifespan runs the scheduled inbound-mail poll (SCHEMA.md §7) as a background task.
-app = FastAPI(title="Settl Engine API", version="0.1.0", lifespan=inbound_poll_scheduler.lifespan_for(state))
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Combines the deferred initial board refresh with the scheduled inbound-mail
+    poll (SCHEMA.md §7). The refresh task is fire-and-forget (kept referenced so it
+    isn't GC'd mid-flight) - server readiness never waits on it."""
+    initial_refresh = asyncio.create_task(state.refresh_async())
+    async with inbound_poll_scheduler.lifespan_for(state)(_app):
+        yield
+    if not initial_refresh.done():
+        initial_refresh.cancel()
+
+
+app = FastAPI(title="Settl Engine API", version="0.1.0", lifespan=lifespan)
 app.include_router(oauth_router)
 app.include_router(poll_routes.build_router(state))
 app.include_router(tenant_config_router)
@@ -161,6 +181,7 @@ def invoices(scope: BoardScope = Depends(board_scope)) -> BoardResponse:
     return BoardResponse(
         summary=BoardSummary(total=len(cards), counts=state.counts(scope.tenant_ids)),
         invoices=cards,
+        board_ready=state.board_ready,
     )
 
 

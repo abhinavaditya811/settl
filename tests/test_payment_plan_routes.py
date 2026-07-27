@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from settl.api.main import app, state
 
 client = TestClient(app)
+# state is built with auto_refresh=False and populated by a background task from
+# the app's lifespan (fast Cloud Run readiness - see main.py); TestClient(app) here
+# is never entered as a context manager, so refresh synchronously instead.
+state.refresh()
 
 
 def test_offer_then_reoffer_amends_the_same_plan():

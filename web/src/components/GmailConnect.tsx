@@ -46,6 +46,11 @@ const Error = styled.span`
   color: ${({ theme }) => theme.status.escalated.fg};
 `;
 
+const Caption = styled.span`
+  font-size: 11px;
+  color: ${({ theme }) => theme.textMuted};
+`;
+
 // oauth_routes.py's _error_redirect() sends a short code, never a raw message -
 // friendly text lives here, one place, easy to extend as new failure modes show up.
 const ERROR_MESSAGES: Record<string, string> = {
@@ -83,7 +88,10 @@ export default function GmailConnect() {
       {connected ? (
         <Connected>✓ Gmail connected</Connected>
       ) : (
-        <Connect href="/api/oauth/connect-gmail">Connect Gmail</Connect>
+        <>
+          <Connect href="/api/oauth/connect-gmail">Connect Gmail</Connect>
+          <Caption>Grants permission to read replies and send recovery emails from this account.</Caption>
+        </>
       )}
       {error && <Error>{error}</Error>}
     </Wrap>

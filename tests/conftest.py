@@ -13,3 +13,7 @@ os.environ["SETTL_USE_SUPABASE"] = "0"
 # Same reasoning: a local .env may set SETTL_USE_GROQ=1 for live inbound
 # classification - force it off so no test makes a real Groq call.
 os.environ["SETTL_USE_GROQ"] = "0"
+# Same reasoning: a local .env may set SETTL_USE_GEMINI=1 for live drafting -
+# force it off so BoardState's refresh() (run per-invoice, no client timeout
+# configured) never makes a real, un-timed Gemini call during collection.
+os.environ["SETTL_USE_GEMINI"] = "0"

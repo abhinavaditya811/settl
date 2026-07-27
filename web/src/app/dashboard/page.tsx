@@ -49,10 +49,24 @@ export default function DashboardPage() {
   // Also what triggers first-time tenant resolution server-side
   // (identity.py's get_or_create_tenant) - the probe itself is a normal
   // "mine" board read.
-  const probeOwnInvoices = useCallback(() => {
+  //
+  // Right after a cold start, board_ready can be false for a few seconds while
+  // the backend's initial refresh() runs in the background (see main.py's
+  // lifespan) - retry rather than treating that transient empty response as a
+  // genuinely-empty account, or a demo viewer sees the zero-state onboarding
+  // screen instead of a loading state. Capped so a backend that never becomes
+  // ready doesn't spin forever.
+  const MAX_READY_ATTEMPTS = 20;
+  const probeOwnInvoices = useCallback((attempt = 0) => {
     setHasOwnInvoices(null);
     getBoard("mine")
-      .then((b) => setHasOwnInvoices(b.summary.total > 0))
+      .then((b) => {
+        if (!b.board_ready && attempt < MAX_READY_ATTEMPTS) {
+          setTimeout(() => probeOwnInvoices(attempt + 1), 1000);
+          return;
+        }
+        setHasOwnInvoices(b.summary.total > 0);
+      })
       .catch(() => setHasOwnInvoices(false));
   }, []);
 
