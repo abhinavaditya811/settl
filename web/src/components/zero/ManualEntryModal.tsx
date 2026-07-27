@@ -32,6 +32,9 @@ const Field = styled.label`
     border-radius: 9px;
     padding: 9px 10px;
   }
+  input[type="date"] {
+    color-scheme: ${({ theme }) => theme.mode};
+  }
 `;
 
 const Grid = styled.div`
