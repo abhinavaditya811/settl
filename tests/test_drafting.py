@@ -20,7 +20,9 @@ from settl.agents.drafting import (
     VertexSearchGrounding,
     VoiceContext,
     build_prompt,
+    build_reply_prompt,
 )
+from settl.agents.drafting.guardrails import _BASE_GUARDRAILS
 from settl.agents.strategy.policy import Action, Tone, decide_strategy
 from settl.audit.execution_log import ExecutionLog
 from settl.compliance import ComplianceGate
@@ -113,6 +115,18 @@ def test_prompt_bakes_in_the_compliance_guardrails():
     text = build_prompt(inv, decide_strategy(inv)).as_model_input()
     assert "Never threaten legal action" in text
     assert "Never give legal advice" in text
+
+
+def test_both_prompt_lanes_share_the_base_guardrails():
+    inv = _repeat_invoice()
+    outbound = build_prompt(inv, decide_strategy(inv)).as_model_input()
+    reply = build_reply_prompt(inv, "Thanks, I'll look at this.").as_model_input()
+    for rule in _BASE_GUARDRAILS:
+        assert rule in outbound
+        assert rule in reply
+    # Outbound-only: tone bound. Reply has no StrategyDecision tone.
+    assert "Stay strictly within the requested tone." in outbound
+    assert "Stay strictly within the requested tone." not in reply
 
 
 def test_safe_fallback_clears_the_gate():
