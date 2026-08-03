@@ -77,7 +77,14 @@ const Nav = styled.nav<{ $compact:boolean }>`
   .links button:hover::after{transform:scaleX(1)}
   .cta { padding:10px 17px; border-radius:99px; color:#171126; background:${ink};box-shadow:0 0 0 rgba(118,217,170,0);transition:background .25s ease,box-shadow .25s ease,transform .25s ease,color .25s ease}
   .cta:hover{background:${mint};color:#0f1a15;box-shadow:0 12px 32px rgba(118,217,170,.28);transform:translateY(-2px) scale(1.02)}
+  .brand,.links button,.cta:focus{outline:none}
+  .brand:focus-visible,.links button:focus-visible,.cta:focus-visible{outline:2px solid ${mint};outline-offset:3px}
+  .brand{cursor:pointer;background:none;border:0;color:inherit;padding:0}
   @media(max-width:720px){ width:calc(100% - 28px); .links{display:none;} }
+  @media (prefers-reduced-motion: reduce) {
+    .mark { transition: none; }
+    .brand:hover .mark { transform: none; }
+  }
 `;
 const HeroInner = styled.div`
   width:min(1240px,calc(100% - 48px)); min-height:calc(100svh - 80px); margin:0 auto; display:grid; grid-template-columns:1.05fr .95fr; align-items:center; gap:60px; position:relative; z-index:2; padding:112px 0 80px;
@@ -97,9 +104,15 @@ const Actions = styled(motion.div)`
   button { position:relative;overflow:hidden;padding:14px 21px; border-radius:99px; border:1px solid rgba(255,255,255,.2); color:${ink}; background:rgba(255,255,255,.06); font:600 14px var(--font-body); cursor:pointer; transition:transform .2s ease,background .2s ease; }
   button span{position:relative;z-index:1}
   button:hover { transform:translateY(-3px); background:rgba(255,255,255,.11); }
+  button:focus { outline:none; }
+  button:focus-visible { outline:2px solid ${mint}; outline-offset:3px; }
   .primary { color:#171126; background:${ink}; border-color:${ink}; }
   .primary::before{content:"";position:absolute;inset:0;background:${mint};transform:translateX(-102%);transition:transform .35s cubic-bezier(.22,.7,.2,1)}
   .primary:hover::before{transform:translateX(0)}
+  @media (prefers-reduced-motion: reduce) {
+    button:hover { transform: none; }
+    .primary::before { transition: none; }
+  }
 `;
 const Stage = styled(motion.div)`position:relative; min-height:520px; display:grid; place-items:center; perspective:1200px; @media(max-width:900px){min-height:420px;}`;
 const Depth = styled(motion.div)`position:absolute;inset:0;display:grid;place-items:center;transform-style:preserve-3d;`;
@@ -119,13 +132,24 @@ const Invoice = styled(motion.div)`
   .next { display:flex; justify-content:space-between; align-items:center; font:500 11px var(--font-mono); text-transform:uppercase; }
   .ready { display:flex; gap:7px; align-items:center; color:#4b8f70; }
   .dot { width:7px; height:7px; border-radius:50%; background:${mint}; animation:${pulse} 1.7s ease infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .dot { animation: none; opacity: 1; }
+  }
 `;
 const Glare=styled(motion.div)`position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:soft-light;`;
 const FloatTag = styled(motion.div)`
   position:absolute; padding:9px 12px; border-radius:99px; color:${ink}; background:rgba(20,15,36,.8); border:1px solid rgba(255,255,255,.16); backdrop-filter:blur(12px);
   font:500 10px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
 `;
-const Scroll = styled(motion.div)`position:absolute; left:50%; bottom:22px; z-index:4; transform:translateX(-50%); color:rgba(255,255,255,.55); font:500 9px var(--font-mono); letter-spacing:.12em; text-transform:uppercase;`;
+const Scroll = styled(motion.button)`
+  position:absolute; left:50%; bottom:22px; z-index:4; transform:translateX(-50%);
+  color:rgba(255,255,255,.55); font:500 9px var(--font-mono); letter-spacing:.12em; text-transform:uppercase;
+  background:none; border:0; padding:8px 12px; border-radius:99px; cursor:pointer;
+  transition:color .2s ease, background .2s ease;
+  &:hover { color:${ink}; background:rgba(255,255,255,.06); }
+  &:focus { outline:none; }
+  &:focus-visible { outline:2px solid ${mint}; outline-offset:3px; color:${ink}; }
+`;
 
 function ScrambleText({text,active}:{text:string;active:boolean}){
   const reduce=useReducedMotion();
@@ -214,9 +238,15 @@ export default function RecoveryPrelude() {
     <Hero>
       <Grain /><Orbit />
       <Nav $compact={compact}>
-        <div className="brand"><span className="mark"><LedgerIcon name="reconcile" /></span>Settl.</div>
-        <div className="links"><button onClick={()=>go("recovery-story")}>How it works</button><button onClick={()=>go("voice")}>Voice</button><button onClick={()=>go("console")}>Product</button></div>
-        <button className="cta" onClick={()=>location.assign("/signin")}>Open dashboard</button>
+        <button type="button" className="brand" onClick={()=>window.scrollTo({ top:0, behavior:"smooth" })} aria-label="Settl home">
+          <span className="mark" aria-hidden="true"><LedgerIcon name="reconcile" /></span>Settl.
+        </button>
+        <div className="links">
+          <button type="button" onClick={()=>go("recovery-story")}>How it works</button>
+          <button type="button" onClick={()=>go("voice")}>Voice</button>
+          <button type="button" onClick={()=>go("console")}>Product</button>
+        </div>
+        <button type="button" className="cta" onClick={()=>location.assign("/signin")}>Open dashboard</button>
       </Nav>
       <HeroInner>
         <div>
@@ -226,7 +256,10 @@ export default function RecoveryPrelude() {
             <span className="line accent"><motion.span initial={{ y:"110%" }} animate={{ y:introDone?0:"110%" }} transition={{ delay:.35,duration:.75,ease }}><ScrambleText text="automatically." active={introDone}/></motion.span></span>
           </H1>
           <Intro initial={{ opacity:0,y:18 }} animate={{ opacity:introDone?1:0,y:introDone?0:18 }} transition={{ delay:.55,duration:.6 }}>Settl follows the money from overdue to paid. It decides the next move, writes in your voice, clears a hard compliance gate, and records every decision.</Intro>
-          <Actions initial={{ opacity:0,y:16 }} animate={{ opacity:introDone?1:0,y:introDone?0:16 }} transition={{ delay:.68 }}><button className="primary" onClick={()=>location.assign("/signin")}><span>Open your dashboard</span></button><button onClick={()=>go("recovery-story")}><span>Follow one invoice ↓</span></button></Actions>
+          <Actions initial={{ opacity:0,y:16 }} animate={{ opacity:introDone?1:0,y:introDone?0:16 }} transition={{ delay:.68 }}>
+            <button type="button" className="primary" onClick={()=>location.assign("/signin")}><span>Open your dashboard</span></button>
+            <button type="button" onClick={()=>go("recovery-story")}><span>Follow one invoice ↓</span></button>
+          </Actions>
         </div>
         <Stage initial={{ opacity:0,scale:.94 }} animate={{ opacity:introDone?1:0,scale:introDone?1:.94 }} transition={{ delay:.3,duration:.9,ease }}
           onMouseMove={(event)=>{const box=event.currentTarget.getBoundingClientRect();pointerX.set((event.clientX-box.left)/box.width-.5);pointerY.set((event.clientY-box.top)/box.height-.5);}}
@@ -245,7 +278,15 @@ export default function RecoveryPrelude() {
           </Depth>
         </Stage>
       </HeroInner>
-      <Scroll initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:1.2 }}>scroll to move the invoice</Scroll>
+      <Scroll
+        type="button"
+        initial={{ opacity:0 }}
+        animate={{ opacity:1 }}
+        transition={{ delay:1.2 }}
+        onClick={()=>go("recovery-story")}
+      >
+        scroll to move the invoice
+      </Scroll>
     </Hero>
   </>;
 }
