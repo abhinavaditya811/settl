@@ -92,6 +92,12 @@ const Brand = styled.div`
       box-shadow: 0 0 0 0 rgba(118, 217, 170, 0);
     }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+      box-shadow: none;
+    }
+  }
 `;
 
 const Col = styled.div`
@@ -123,6 +129,23 @@ const Col = styled.div`
     color: #fff;
     transform: translateX(2px);
   }
+  a:focus,
+  button:focus {
+    outline: none;
+  }
+  a:focus-visible,
+  button:focus-visible {
+    color: #fff;
+    outline: 2px solid ${mint};
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    a:hover,
+    button:hover {
+      transform: none;
+    }
+  }
 `;
 
 const Bottom = styled.div`
@@ -150,6 +173,15 @@ const Bottom = styled.div`
   }
   .legal a:hover {
     color: #fff;
+  }
+  .legal a:focus {
+    outline: none;
+  }
+  .legal a:focus-visible {
+    color: #fff;
+    outline: 2px solid ${mint};
+    outline-offset: 3px;
+    border-radius: 4px;
   }
 `;
 
