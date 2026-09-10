@@ -6,4 +6,4 @@ on every push to master, even ones that deploy nothing. Do not edit by hand.
 
 - **Backend (Cloud Run)**: 2026-07-27T22:32:22Z — commit `99e4008`
 - **Frontend (Vercel)**: 2026-08-03T04:00:05Z — commit `cd92a93`
-- **Workflow last ran**: 2026-09-10T14:27:18Z — commit `e034499`
+- **Workflow last ran**: 2026-09-10T15:24:36Z — commit `8ec5874`
