@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from settl.agents.drafting.guardrails import _BASE_GUARDRAILS
 from settl.agents.strategy.policy import StrategyDecision, Tone
 from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
 
@@ -40,17 +41,10 @@ _TONE_BRIEF = {
     Tone.FINAL: "serious and final but still courteous; no threats, no ultimatums",
 }
 
-# Compliance posture handed to the model as defense in depth. The gate is the real
-# authority; these instructions just make a clean draft the likely outcome.
+# Shared hard rules + outbound-only tone bound (reply has no StrategyDecision tone).
 _GUARDRAILS = (
-    "Hard rules you must never break:",
-    "- Never threaten legal action, lawsuits, court, collections, or a debt collector.",
-    "- Never claim a consequence we cannot or will not carry out "
-    "(credit reporting, seizing assets, etc.).",
-    "- Never give legal advice or assert what the recipient is legally obligated to do.",
-    "- Do not insult, shame, or harass. Stay strictly within the requested tone.",
-    "- Never write a real URL. Include the exact token {{payment_link}} once, verbatim, "
-    "where the payment link belongs - the sending layer swaps it for the real link.",
+    *_BASE_GUARDRAILS,
+    "- Stay strictly within the requested tone.",
 )
 
 

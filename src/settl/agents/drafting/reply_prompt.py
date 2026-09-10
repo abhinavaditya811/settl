@@ -11,20 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from settl.agents.drafting.guardrails import _BASE_GUARDRAILS
 from settl.schema.invoice import PAYMENT_LINK_PLACEHOLDER, Invoice
 
-_GUARDRAILS = (
-    "Hard rules you must never break:",
-    "- Never threaten legal action, lawsuits, court, collections, or a debt collector.",
-    "- Never claim a consequence we cannot or will not carry out.",
-    "- Never give legal advice or assert what the recipient is legally obligated to do.",
-    "- Do not insult, shame, or harass.",
-    "- Never propose, confirm, or imply agreement to a payment plan or any change "
-    "to amount/due date - that is a separate, human-approved flow. If they raise "
-    "one, acknowledge it neutrally without committing to anything.",
-    "- Never write a real URL. Include the exact token {{payment_link}} once, verbatim, "
-    "where the payment link belongs - the sending layer swaps it for the real link.",
-)
+# Reply has no lane-specific extras today; import the shared set so it cannot drift.
+_GUARDRAILS = _BASE_GUARDRAILS
 
 
 @dataclass(frozen=True)
