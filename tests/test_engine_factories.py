@@ -179,3 +179,19 @@ def test_is_live_sees_through_channel_routing_too(monkeypatch):
     assert factories.is_live(guarded) is True
     monkeypatch.delenv("SETTL_LIVE_SEND")
     assert factories.is_live(factories.make_guarded_sender(log=None)) is False
+
+
+# --- reply drafter (Gemini seam for inbound auto-replies) ----------------------
+
+
+def test_make_reply_drafter_uses_gemini_when_armed(monkeypatch):
+    from settl.agents.drafting.reply_model import GeminiReplyModel, NoOpReplyModel
+
+    monkeypatch.setenv("SETTL_USE_GEMINI", "0")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    assert isinstance(factories.make_reply_drafter(log=None)._model, NoOpReplyModel)
+
+    monkeypatch.setenv("SETTL_USE_GEMINI", "1")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    assert isinstance(factories.make_reply_drafter(log=None)._model, GeminiReplyModel)

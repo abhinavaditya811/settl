@@ -100,6 +100,7 @@ class BoardState:
         self._inbound_replier = Orchestrator(
             log=self._log, sender=inbound_reply_sender, rules_store=self._rules,
             inbound_agent=factories.make_inbound_agent(self._log),
+            reply_drafter=factories.make_reply_drafter(self._log),
         )
         self._payment_plans = PaymentPlanBoard(log=self._log)
         self._payment_plans.hydrate()

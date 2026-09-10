@@ -203,9 +203,9 @@ def is_live(sender: Sender) -> bool:
 
 
 def gemini_enabled() -> bool:
-    """Real Gemini (drafting + inbound classification) is opt-in (SETTL_USE_GEMINI=1)
-    *and* needs a key, so the default board run - and the test suite - stays
-    offline and deterministic."""
+    """Real Gemini (chase drafting, reply drafting, inbound classification) is
+    opt-in (SETTL_USE_GEMINI=1) *and* needs a key, so the default board run -
+    and the test suite - stays offline and deterministic."""
     armed = os.environ.get("SETTL_USE_GEMINI") == "1"
     has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
     return armed and has_key
@@ -221,6 +221,17 @@ def make_drafter(log: ExecutionLog):
     if gemini_enabled():
         return DraftingAgent(log=log, model=GeminiDraftModel())
     return DraftingAgent(log=log)
+
+
+def make_reply_drafter(log: ExecutionLog):
+    """Real Gemini reply drafting when a key is configured; the offline template
+    otherwise. Used for inbound auto-replies (BENIGN lane) - mirrors make_drafter."""
+    from settl.agents.drafting import ReplyDraftingAgent
+    from settl.agents.drafting.reply_model import GeminiReplyModel
+
+    if gemini_enabled():
+        return ReplyDraftingAgent(log=log, model=GeminiReplyModel())
+    return ReplyDraftingAgent(log=log)
 
 
 def groq_enabled() -> bool:
